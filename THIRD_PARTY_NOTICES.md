@@ -57,3 +57,10 @@ https://github.com/googlefonts/roboto (`src/hinted/`), and `MaterialIconsRound-R
 `.codepoints` list from https://github.com/google/material-design-icons (`font/`), unmodified. The
 SDF font assets beside them are generated from these. Copyright Google LLC. Licensed under the
 Apache License 2.0.
+
+## Shizuku API
+
+The Android plugin in `Assets/Plugins/Android/CardboardXRWindows.androidlib` depends on the Shizuku
+API libraries (https://github.com/RikkaApps/Shizuku-API), licensed under the MIT License. Copyright
+(c) 2021 RikkaW. The way it makes a trusted virtual display as the shell user follows scrcpy
+(https://github.com/Genymobile/scrcpy), licensed under the Apache License 2.0.

@@ -142,6 +142,10 @@ phone's home screen. The app logs the options it received at startup (`[Stereo] 
 - **Portal** opens a doorway on your floor (look at it and pinch) with a night world beyond it.
   Walk through the frame, off the cable, and the world surrounds you, with your room showing
   through the door behind; walk back through to return. It's in passthrough, so all of it is flat.
+- **Apps** shows a real Android app, for now YouTube, on a floating window, for which
+  [Shizuku](https://shizuku.rikka.app/) must be running on the phone (allow CardboardXR at its prompt).
+  Look at the window and pinch or tap to tap there; the buttons below it go back, go to the app's
+  start, scroll, center the window and leave. Leaving closes the app.
 - **The settings panel**, in every scene: hold a hand up with its palm toward you and a gear button
   appears between your thumb and index finger; pinch to open the panel in front of you. It has
   *Apps* (the app library), *Recenter* and *Scan Room* (in 6DoF: scans again, or ends a scan), and the toggles *6DoF* and *Passthrough*. It follows

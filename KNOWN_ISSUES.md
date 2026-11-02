@@ -61,6 +61,18 @@ farther out still places one.
 They're passed by the scripts (intent extras on Android, environment variables on iOS), so opening
 the app from the phone's home screen uses the defaults.
 
+## Android
+
+### App windows
+
+The app in the window draws on a private virtual display, which only the shell user can make, so
+Apps needs Shizuku, and Shizuku needs starting again after each reboot. Frames are copied through
+the CPU, which is simple but adds heat. Input is one `input` command per tap, so there's no
+continuous drag, and apps that protect their video will show black. On a Galaxy S23 FE (One UI 6.1)
+an app opening on the display takes focus from Unity, which stops drawing until it's brought back
+to the front, so the service does that after each launch and input. A display in its own display
+group stays off, and the app on it draws only black.
+
 ## iPhone 15 Pro
 
 ### 120 fps doesn't hold with hand tracking, or when the phone is hot

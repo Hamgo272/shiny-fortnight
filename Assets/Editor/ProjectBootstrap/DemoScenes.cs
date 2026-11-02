@@ -1,4 +1,5 @@
 using CardboardXR.Demos;
+using CardboardXR.Demos.Apps;
 using CardboardXR.Demos.Paint;
 using CardboardXR.Demos.Portal;
 using CardboardXR.Demos.Rush;
@@ -32,6 +33,8 @@ namespace ProjectBootstrap
         const string RushScene = RushFolder + "/Rush.unity";
         const string PortalFolder = DemosFolder + "/Portal";
         const string PortalScene = PortalFolder + "/Portal.unity";
+        const string AppsFolder = DemosFolder + "/Apps";
+        const string AppsScene = AppsFolder + "/Apps.unity";
         const string DepthMaskShaderPath = "Assets/_Project/Shaders/DepthMask.shader";
         const string UnlitShaderName = "Universal Render Pipeline/Unlit";
 
@@ -51,6 +54,7 @@ namespace ProjectBootstrap
             EnsurePaint();
             EnsureRush();
             EnsurePortal();
+            EnsureApps();
             AssetDatabase.SaveAssets();
             return catalog;
         }
@@ -170,6 +174,24 @@ namespace ProjectBootstrap
 
             EditorSceneManager.SaveScene(scene, SandboxScene);
             Debug.Log($"[DemoScenes] Made {SandboxScene}");
+        }
+
+        // A window onto a real app: the demo, with an unlit material for the app's picture to go on.
+        static void EnsureApps()
+        {
+            if (AssetDatabase.LoadAssetAtPath<SceneAsset>(AppsScene) != null)
+                return;
+            StereoBuilder.EnsureFolder(AppsFolder);
+            var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+            var material = StereoBuilder.CreateMaterial("App Window", Shader.Find(UnlitShaderName), Color.white, null, 1f, AppsFolder);
+
+            var demo = new GameObject("Apps Demo").AddComponent<AppWindowDemo>();
+            var serializedDemo = new SerializedObject(demo);
+            serializedDemo.FindProperty("m_Material").objectReferenceValue = material;
+            serializedDemo.ApplyModifiedPropertiesWithoutUndo();
+
+            EditorSceneManager.SaveScene(scene, AppsScene);
+            Debug.Log($"[DemoScenes] Made {AppsScene}");
         }
 
         // The video player: a sphere to draw on, the player and its panel (built at runtime).

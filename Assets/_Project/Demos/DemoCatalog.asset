@@ -84,3 +84,17 @@ MonoBehaviour:
       ScanSurfaces: 0
       KeepPlacedObjects: 0
       HideCorePanel: 1
+  - Id: apps
+    Title: Apps
+    Description: Real Android apps on a floating window in front of you, starting with YouTube. Needs Shizuku running on the phone. Look and pinch to tap inside the app.
+    Tagline: YouTube on a floating window
+    Icon: apps
+    Tint: {r: 0.72, g: 0.16, b: 0.16, a: 1}
+    ScenePath: Assets/_Project/Demos/Apps/Apps.unity
+    Requirements:
+      SixDof: 1
+      Passthrough: 1
+      Hands: 1
+      ScanSurfaces: 0
+      KeepPlacedObjects: 0
+      HideCorePanel: 1
