@@ -118,6 +118,9 @@ namespace ProjectBootstrap
             PlayerSettings.Android.keyaliasName = "";
             PlayerSettings.SetApplicationIdentifier(namedTarget, savedId);
             PlayerSettings.productName = savedName;
+            // Written now: Unity exits straight after, and the restored values were left unsaved, so a
+            // build's app id and name stayed in ProjectSettings.
+            AssetDatabase.SaveAssets();
 
             var summary = report.summary;
             Debug.Log($"[Build] {(development ? "Development build" : "Build")} {summary.result}: {outputPath} " +

@@ -52,6 +52,8 @@ namespace CardboardXR.UI
             ["flag"] = 0xe153,
             ["front_hand"] = 0xe769,
             ["apps"] = 0xe5c3,
+            // A play button in a rounded rectangle: the Apps demo, which opens YouTube.
+            ["smart_display"] = 0xf06a,
             ["bolt"] = 0xea0b,
         };
 

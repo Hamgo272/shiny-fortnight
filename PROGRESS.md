@@ -14,18 +14,29 @@ One UI 6.1) with Shizuku.
   Confirmed on the phone's log (`[Pinch] Off` right after `[Passthrough] On`, then no input at all).
   `PinchInput` now turns hand tracking on whenever it's 6DoF with pinching on. Apps now asks for
   6DoF + passthrough + hands, so YouTube opens in passthrough.
-- **Window controls** (`AppWindowDemo.cs`, the demo is now an `IPinchHandler`):
-  - pinch and release on the window: tap
-  - pinch and move the hand: drag, sent as swipes (one when the fingers open, more on a long drag),
-    so a feed scrolls with the hand
-  - pinch the window's edge (it lights up under the gaze) and pull: resize, keeping 16:9
-  - Move button, top-left corner: the window hides; the next pinch puts it where you're looking
-  - Close button, top-right corner: closes the app and leaves
-  - in 3DoF (no hand position) a pinch can only tap, as before
+- **Window controls** (`AppWindowDemo.cs`), tested on the S23 FE:
+  - a pinch on the window is a tap, through the ordinary gaze click (`WindowClick`), exactly as the
+    first version. An in-between version took pinches itself to drag and to resize from every
+    edge; taps kept turning into drags or resizes (the window lit blue and moved), so that's gone.
+    Scroll with the panel's Up/Down. Drag-to-scroll could come back later, in a way that doesn't
+    take taps.
+  - the demo takes only two pinches (`PinchRouter.Handler`): on an L handle just outside a bottom
+    corner, which resizes from that corner (16:9 kept), and, while moving, the one that puts the
+    window down
+  - Move and Close sit in a small bar centred above the window (at the top corners they were
+    pressed by taps meant for YouTube's own menu and back buttons). Move works as in Android XR:
+    the window follows the gaze until a pinch puts it down. Close closes the app and leaves.
+  - the window otherwise stays where it is: only Move, Arrange or a handle shift it
+  - no cubes in Apps: a pinch that missed the window and hit the floor placed one, as in the lobby
+  - the settings gear is unchanged: it appears only with the palm toward you
+  - 60 fps while the window is up, for heat. A lower render scale was tried and removed: changing
+    it mid-session through `StereoRig.Rebuild` left the settings panel unclickable after leaving.
+- **The library tile** is now "YouTube" with a play-button icon (`smart_display`).
+- **App id** is `com.aira.cardboardxr` everywhere (Android, iOS, the Mac scripts, README).
 - **Arrange windows** (settings toolbar, `view_agenda` icon). `FloatingWindows` is a registry of
   the scene's windows and panels; Arrange puts them on an arc around you at eye level, widest in
   the middle, then right and left, with panels in a row below, like Android XR's reposition.
-  The Apps window (with its corner buttons), its panel and the Portal panel register themselves.
+  The Apps window (with its button bar), its panel and the Portal panel register themselves.
   Other demos' panels can join with `FloatingWindows.Register(...)`.
 
 ### Portal: the Moon (second world, now the default)
@@ -75,17 +86,17 @@ adb install -r Builds/CardboardXR.apk
 ```
 
 An APK built on one computer is signed with that computer's debug key, so it won't install over
-one built on another: uninstall first (`adb uninstall com.brenpoly.cardboardxr`). That removes the
+one built on another: uninstall first (`adb uninstall com.aira.cardboardxr`). That removes the
 app's data on the phone (pushed videos, the saved viewer).
 
 Wireless debugging over Tailscale works: `adb pair <ip>:<pair port> <code>`, then
 `adb connect <ip>:<port>` (the port on the Wireless debugging screen). Turn on Stay awake, or the
 connection drops when the screen sleeps.
 
-A second copy installs beside the Mac-built app, so that one stays as a backup:
+A second copy can install beside another build (another app id), so that one stays as a backup:
 
 ```sh
-CARDBOARDXR_BUNDLE_ID=com.brenpoly.cardboardxr.win CARDBOARDXR_APP_NAME="CardboardXR Win" "$U" -batchmode -quit ...
+CARDBOARDXR_BUNDLE_ID=com.aira.cardboardxr.test CARDBOARDXR_APP_NAME="CardboardXR Test" "$U" -batchmode -quit ...
 ```
 
 The build puts the app id and name back afterwards, so they aren't left in ProjectSettings. A Unity
@@ -103,16 +114,15 @@ build restarts adb, which drops a wireless connection: `adb connect` again befor
 
 ## Status and open items
 
-Tested on the S23 FE (`CardboardXR Win` build, 2026-11-04): the settings X closes with passthrough
-on; Apps opens in passthrough; tap, drag, edge resize, Move, Arrange and the passthrough soft fill
-all work. Not yet tried on the phone: the Moon.
+Tested on the S23 FE (`com.aira.cardboardxr`, 2026-11-04): the settings X closes with passthrough
+on and after leaving YouTube; YouTube opens in passthrough; taps on the window work; the window
+stays put; Move, Close, the corner handles, Arrange and the matte passthrough fill work. Not yet
+tried on the phone: the Moon.
 
-To do next:
-
-- Drag and resize are too sensitive (hand motion amplified up to ~7x): cap it near 3x.
-- Apps runs hot (`thermal status 4`, display down to 60 Hz): AR, hand tracking, YouTube's decoder
-  and a CPU frame copy all at once. Ideas: hand tracking at a lower rate in Apps, 60 fps target,
-  skip copying unchanged frames.
+- Passthrough fill: the screen is drawn 2.6x the camera image; outside it the image's edge is a
+  matte blur (eight reads of a soft mip, desaturated, dimmed and dithered). A first version read
+  one small mip and looked banded and watery. `passFill 0` turns it off.
+- Apps still runs warm (60 fps helps). See "Cooler running" below.
 
 Known limits:
 
@@ -123,3 +133,57 @@ Known limits:
 - Android XR SDK: it targets Android XR headsets and glasses; Unity's Android XR support needs
   such a device, so it won't run on the S23 FE. The window behaviours above follow Android XR's
   instead.
+
+## Future ideas
+
+### Live portal into someone else's room (Insta360)
+
+Another person with the app and an Insta360 camera opens their room to you: the Portal's doorway
+shows their room as their 360 camera films it, and stepping through puts you inside their 360°
+view, with your own room behind you through the door.
+
+What already exists:
+
+- The 360 sphere: the 360 Video demo maps equirectangular video onto a sphere (`VideoSphere`).
+- The door: the Portal shows a world only through the doorway and swaps sides as you walk through.
+  A third world next to Night and Moon, "Live", would be a video sphere instead of terrain
+  (`PortalWorld.Kind`).
+- Frames from an Android-side source into a texture: the YouTube window does this already
+  (`AppWindowBridge`).
+
+What you'd get, and the limits:
+
+- Outside, their room is seen through the door; inside, it surrounds you.
+- A 360 camera films from one point: you can look around but not walk around or lean to see behind
+  things, so once through, the sphere follows your head's position (3DoF in there). Mono 360 looks
+  flat, as the Moon does in passthrough.
+- A 360 stream spreads its pixels all round, so even "5.7K" looks soft in a viewer: a sense of
+  place, not text you can read.
+
+The hard part is the live link, not the visuals:
+
+- Insta360 X3/X4 can live stream over RTMP (to YouTube or your own server). RTMP or HLS adds about
+  2–10 s of delay: fine for looking around, awkward for talking.
+- WebRTC gets it to about 0.3–1 s but needs a small signalling server, and a relay when not on the
+  same network. Tailscale (already used for wireless adb) makes connecting two people much easier.
+- Unity's video player on Android handles live RTSP/RTMP poorly, so it likely needs an Android-side
+  player (ExoPlayer, or a WebRTC library) feeding frames into the sphere, as the YouTube window does.
+- Two-way audio, and something for them to see of you: your passthrough camera in a window, or an
+  avatar.
+
+A first version:
+
+1. The Insta360 streams RTMP to a small server (for example MediaMTX on a PC) over Tailscale.
+2. The app adds a "Live" portal world that plays that stream on a sphere behind the door.
+
+### Cooler running (from the S23 FE's thermal status 4 in Apps)
+
+- Run the hand model on the GPU (Unity Inference's GPU backend), or an NPU through another
+  runtime: likely the biggest win, to be measured behind a launch option.
+- Pass the YouTube window's frames to the GPU directly (a shared texture) instead of copying them
+  through the CPU.
+- Lower the forced screen brightness in heavy demos (the `brightness` launch option exists).
+- A lower render scale in heavy demos. Tried and removed: changing it mid-session through
+  `StereoRig.Rebuild` (which remakes the eye cameras) left the settings panel unclickable after
+  leaving YouTube, with every pinch falling through to the real surface behind it. A retry should
+  resize the eye textures in place and keep the cameras.

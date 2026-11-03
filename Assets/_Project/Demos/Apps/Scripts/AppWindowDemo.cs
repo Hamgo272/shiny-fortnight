@@ -8,15 +8,17 @@ using UnityEngine.EventSystems;
 namespace CardboardXR.Demos.Apps
 {
     // A floating window onto a real Android app: the app runs on a private virtual display, its picture
-    // comes here through AppWindowBridge, and pinches on the window become touches in the app:
-    //   a pinch and release in place taps there;
-    //   a pinch, then moving the hand while pinched, drags the app's content with the hand (scrolling a
-    //   feed, say), sent as swipes since the bridge's input is one command per gesture: one when the
-    //   fingers open, and more along the way on a long drag;
-    //   a pinch on the window's edge (the outer k_EdgeMeters, which light up under the gaze) resizes the
-    //   window, pulling that edge or corner with the hand, the app's picture staying 16:9.
-    // Two round buttons sit on the window's top corners: Move (left) hides the window, and the next
-    // pinch puts it back where you're looking; Close (right) closes the app and leaves. The panel below
+    // comes here through AppWindowBridge, and a pinch (or screen tap) with the gaze on the window taps
+    // the app there. As in the first version, that's the app's ordinary gaze click (WindowClick): the
+    // demo doesn't take pinches on the window. An earlier version did, to drag and to resize from
+    // every edge, and taps kept turning into drags, resizes (the window lit blue and moved) and, with
+    // the palm half toward the face, the settings panel.
+    // Only two pinches are the demo's (PinchRouter.Handler): on one of the L handles just outside the
+    // bottom corners, which resizes the window from that corner as in Android XR, the app's picture
+    // staying 16:9; and, after Move, the one that puts the window down. The window otherwise stays
+    // where it is: only Move, Arrange or a handle shift it.
+    // Two round buttons sit in a small bar above the window: Move (left) makes the window follow the
+    // gaze until a pinch puts it down; Close (right) closes the app and leaves. The panel below
     // goes back, goes to the app's start, scrolls, brings the window back in front, and leaves. It
     // centers itself on the first frame, since the head's first pose can be off until the tracker
     // settles. Needs Shizuku running on the phone.
@@ -40,15 +42,17 @@ namespace CardboardXR.Demos.Apps
         const float k_PanelDistance = 1.5f;
         const float k_PanelPitch = -30f;
         const float k_LogSeconds = 5f;
-        // The band along the window's edge that resizes, in meters on the window.
-        const float k_EdgeMeters = 0.12f;
-        // A hand that moves less than this while pinched taps; more drags, in meters.
-        const float k_DragStart = 0.015f;
-        // A long drag sends a swipe each time it has gone this many app pixels.
-        const int k_DragChunk = 220;
-        // How much farther the window is than the hand, for turning the hand's movement into the
-        // window's: the hand moves a little to drag across a window two meters away.
-        const float k_HandReach = 0.45f;
+        // How near a bottom corner's handle the gaze must be to take it, in meters on the window.
+        const float k_HandleReach = 0.15f;
+        // The hand's movement is scaled up to the window's, as the window is farther than the hand,
+        // but at most this much: at the full ratio (about 7 at arm's length from a window 2 m away)
+        // a few centimeters of hand flung a drag to the window's edge and a resize to its limit.
+        const float k_MaxReach = 3f;
+        // Heat: the app's video decoding and the frame copy come on top of AR and hand tracking, which
+        // took the S23 FE to thermal status 4 (severe) with its display down to 60 Hz. So while the
+        // window is up the app aims for 60 fps, put back on leaving. (Hand tracking held to 15 Hz made
+        // the pinch point jumpy, and taps became drags; it runs at its usual rate.)
+        const int k_FrameRate = 60;
         static readonly Vector2 k_PanelSize = new(700f, 112f);
         static readonly Vector2 k_CornerSize = new(64f, 64f);
 
@@ -58,8 +62,6 @@ namespace CardboardXR.Demos.Apps
         enum Gesture
         {
             None,
-            Touch,
-            Drag,
             Resize,
         }
 
@@ -67,6 +69,8 @@ namespace CardboardXR.Demos.Apps
         readonly AppWindowBridge m_Bridge = new();
         Transform m_Window;
         Transform m_Edge;
+        readonly Transform[] m_Handles = new Transform[4];
+        Material m_HandleMaterial;
         Material m_WindowMaterial;
         Material m_EdgeMaterial;
         Texture2D m_Texture;
@@ -80,20 +84,22 @@ namespace CardboardXR.Demos.Apps
         float m_NextLog;
         float m_Width = k_WindowWidth;
         bool m_Moving;
+        int m_SavedFrameRate;
         FloatingWindows.Window m_WindowEntry;
         FloatingWindows.Window m_PanelEntry;
 
         // The pinch held on the window, if any.
         Gesture m_Gesture;
         Vector3 m_PinchStart;
-        Vector2Int m_TouchPixel;
-        Vector2 m_DragSent;
         Vector2 m_ResizeSide;
         float m_ResizeFrom;
 
         public override void OnDemoEnter(CoreServices core)
         {
             m_Core = core;
+            // No cubes: a pinch that misses the window and lands on the floor would place one, as in
+            // the lobby (demos get cubes unless they choose otherwise, see DemoManager).
+            core.Placer.ObjectPrefab = null;
             BuildWindow();
             BuildPanel();
             BuildCorners();
@@ -109,17 +115,22 @@ namespace CardboardXR.Demos.Apps
             m_PanelEntry = FloatingWindows.Register("Window Panel", m_Panel, M3Theme.DpToMeters(k_PanelSize.x, k_PanelDistance), true,
                 k_PanelDistance);
             PinchRouter.Handler = this;
+            m_SavedFrameRate = Application.targetFrameRate;
+            Application.targetFrameRate = k_FrameRate;
+            Debug.Log($"[Apps] To keep cool: {k_FrameRate} fps");
             m_Bridge.Start(k_Width, k_Height, k_Dpi, k_App);
         }
 
         public override void OnDemoExit(CoreServices core)
         {
             m_Bridge.Stop();
+            Application.targetFrameRate = m_SavedFrameRate;
             FloatingWindows.Unregister(m_WindowEntry);
             FloatingWindows.Unregister(m_PanelEntry);
             Destroy(m_Texture);
             Destroy(m_WindowMaterial);
             Destroy(m_EdgeMaterial);
+            Destroy(m_HandleMaterial);
         }
 
         void Update()
@@ -143,6 +154,8 @@ namespace CardboardXR.Demos.Apps
             }
             if (Time.unscaledTime >= m_NextLog)
                 LogFrames();
+            if (m_Moving)
+                PlaceWhereLooking();
             FollowPinch();
             ShowEdge();
         }
@@ -206,6 +219,19 @@ namespace CardboardXR.Demos.Apps
             edge.GetComponent<MeshRenderer>().sharedMaterial = m_EdgeMaterial;
             edge.SetActive(false);
             m_Edge = edge.transform;
+
+            // Resize handles on the bottom corners, as Android XR has: an L of two bars at each,
+            // just outside the window, light blue while the gaze is on that corner.
+            m_HandleMaterial = new Material(m_Material) { color = new Color(0.75f, 0.78f, 0.82f) };
+            for (var i = 0; i < m_Handles.Length; i++)
+            {
+                var bar = GameObject.CreatePrimitive(PrimitiveType.Quad);
+                bar.name = $"Resize Handle {i}";
+                Destroy(bar.GetComponent<Collider>());
+                bar.transform.SetParent(transform, false);
+                bar.GetComponent<MeshRenderer>().sharedMaterial = m_HandleMaterial;
+                m_Handles[i] = bar.transform;
+            }
             ApplySize();
         }
 
@@ -243,16 +269,44 @@ namespace CardboardXR.Demos.Apps
 
         void PlaceCorners()
         {
-            if (m_MoveCorner == null || m_Window == null)
+            if (m_Window == null)
                 return;
-            // Just outside the top corners, a little in front of the window.
-            var outward = 0.06f;
+            PlaceHandles();
+            if (m_MoveCorner == null)
+                return;
+            // Side by side in a small bar centered above the window, clear of its edge. At the top
+            // corners they sat beside the app's own menu and back buttons, and a tap meant for those
+            // pressed Move.
+            const float above = 0.13f;
+            const float apart = 0.075f;
             var toward = -m_Window.forward * 0.02f;
+            var top = m_Width * k_Height / k_Width / 2f + above;
+            m_MoveCorner.SetPositionAndRotation(m_Window.position + m_Window.rotation * new Vector3(-apart, top, 0f) + toward, m_Window.rotation);
+            m_CloseCorner.SetPositionAndRotation(m_Window.position + m_Window.rotation * new Vector3(apart, top, 0f) + toward, m_Window.rotation);
+        }
+
+        // The L handles: at each bottom corner a horizontal and a vertical bar, 3 cm outside the window.
+        void PlaceHandles()
+        {
+            if (m_Handles[0] == null)
+                return;
+            const float length = 0.16f;
+            const float thickness = 0.022f;
+            const float gap = 0.03f;
             var half = new Vector2(m_Width / 2f, m_Width * k_Height / k_Width / 2f);
-            m_MoveCorner.SetPositionAndRotation(m_Window.position + m_Window.rotation * new Vector3(-half.x - outward, half.y + outward, 0f) + toward,
-                m_Window.rotation);
-            m_CloseCorner.SetPositionAndRotation(m_Window.position + m_Window.rotation * new Vector3(half.x + outward, half.y + outward, 0f) + toward,
-                m_Window.rotation);
+            for (var side = 0; side < 2; side++)
+            {
+                var sx = side == 0 ? -1f : 1f;
+                var corner = new Vector2(sx * (half.x + gap), -(half.y + gap));
+                var across = m_Handles[side * 2];
+                var up = m_Handles[side * 2 + 1];
+                across.SetPositionAndRotation(m_Window.position +
+                    m_Window.rotation * new Vector3(corner.x - sx * (length / 2f - thickness / 2f), corner.y, -0.005f), m_Window.rotation);
+                across.localScale = new Vector3(length, thickness, 1f);
+                up.SetPositionAndRotation(m_Window.position +
+                    m_Window.rotation * new Vector3(corner.x, corner.y + length / 2f - thickness / 2f, -0.005f), m_Window.rotation);
+                up.localScale = new Vector3(thickness, length, 1f);
+            }
         }
 
         // Ahead of the head at eye level, with the panel below it.
@@ -277,23 +331,20 @@ namespace CardboardXR.Demos.Apps
             PlaceCorners();
         }
 
+        // Move, as in Android XR: the window stays in view and follows the gaze until a pinch puts it
+        // down. (It used to hide until the next pinch, so a Move pressed by mistake turned the next
+        // tap into moving the window, with nothing to show it.)
         void StartMove()
         {
             m_Moving = true;
-            m_Window.gameObject.SetActive(false);
-            m_MoveCorner.gameObject.SetActive(false);
-            m_CloseCorner.gameObject.SetActive(false);
-            m_Status.text = "Look where you want the window and pinch.";
-            Debug.Log("[Apps] Moving the window: the next pinch puts it where the gaze is");
+            m_Status.text = "Look where you want the window, then pinch to put it there.";
+            Debug.Log("[Apps] Moving the window: it follows the gaze until a pinch");
         }
 
         void FinishMove()
         {
             m_Moving = false;
             PlaceWhereLooking();
-            m_Window.gameObject.SetActive(true);
-            m_MoveCorner.gameObject.SetActive(true);
-            m_CloseCorner.gameObject.SetActive(true);
             m_Status.text = Describe(m_State);
             Debug.Log("[Apps] Window moved");
         }
@@ -322,24 +373,35 @@ namespace CardboardXR.Demos.Apps
             if (!plane.Raycast(ray, out var distance))
                 return false;
             local = m_Window.InverseTransformPoint(ray.GetPoint(distance));
-            var margin = k_EdgeMeters / m_Width;
-            return Mathf.Abs(local.x) <= 0.5f + margin && Mathf.Abs(local.y) <= 0.5f + margin * k_Width / k_Height;
+            var height = m_Width * k_Height / k_Width;
+            return Mathf.Abs(local.x) <= 0.5f + k_HandleReach / m_Width && Mathf.Abs(local.y) <= 0.5f + k_HandleReach / height;
         }
 
-        // Which edges the gaze is on, as -1, 0 or +1 across and up; zero for neither.
+        // Whether a point (window-local) is on the window itself, not the band around it.
+        static bool OnWindow(Vector3 local) => Mathf.Abs(local.x) <= 0.5f && Mathf.Abs(local.y) <= 0.5f;
+
+        // Which bottom corner's handle the gaze is on, as (-1 or +1, -1); zero for none. Only the
+        // handles resize: within k_HandleReach of a bottom corner, outside the window.
         Vector2 EdgeAt(Vector3 local)
         {
+            if (OnWindow(local))
+                return Vector2.zero;
             var height = m_Width * k_Height / k_Width;
-            var x = Mathf.Abs(local.x) * m_Width > m_Width / 2f - k_EdgeMeters ? Mathf.Sign(local.x) : 0f;
-            var y = Mathf.Abs(local.y) * height > height / 2f - k_EdgeMeters ? Mathf.Sign(local.y) : 0f;
-            return new Vector2(x, y);
+            var point = new Vector2(local.x * m_Width, local.y * height);
+            var corner = new Vector2(Mathf.Sign(local.x) * m_Width / 2f, -height / 2f);
+            return (point - corner).magnitude < k_HandleReach ? new Vector2(Mathf.Sign(local.x), -1f) : Vector2.zero;
         }
 
         void ShowEdge()
         {
-            var on = m_Gesture == Gesture.Resize || (m_Gesture == Gesture.None && GazeOnWindow(out var local) && EdgeAt(local) != Vector2.zero);
-            if (m_Edge.gameObject.activeSelf != on)
-                m_Edge.gameObject.SetActive(on);
+            var edge = m_Gesture == Gesture.Resize ? m_ResizeSide
+                : m_Gesture == Gesture.None && GazeOnWindow(out var local) ? EdgeAt(local) : Vector2.zero;
+            // The frame round the window stays off: only the handles show a resize is coming.
+            if (m_Edge.gameObject.activeSelf)
+                m_Edge.gameObject.SetActive(false);
+            // The handles light up on their corner.
+            var corner = edge.y < 0f && edge.x != 0f;
+            m_HandleMaterial.color = corner ? new Color(0.55f, 0.8f, 1f) : new Color(0.75f, 0.78f, 0.82f);
         }
 
         // A pinch begins: on the window's edge it resizes, on the window it touches (then taps or
@@ -351,42 +413,29 @@ namespace CardboardXR.Demos.Apps
                 FinishMove();
                 return true;
             }
+            // Only a resize handle: everything on the window is the ordinary gaze click, a tap.
             if (source != PinchSource.Hand || !GazeOnWindow(out var local))
+                return false;
+            if (gazeTarget != null)
+                return false;
+            var edge = EdgeAt(local);
+            if (edge == Vector2.zero)
                 return false;
             var tracker = m_Core.HandTracker;
             if (tracker == null || !tracker.IsTracking)
                 return false;
             m_PinchStart = tracker.PinchPoint;
-            var edge = EdgeAt(local);
-            if (edge != Vector2.zero)
-            {
-                m_Gesture = Gesture.Resize;
-                m_ResizeSide = edge;
-                m_ResizeFrom = m_Width;
-                Debug.Log($"[Apps] Resizing from the {(edge.y > 0 ? "top" : edge.y < 0 ? "bottom" : "")}{(edge.x > 0 ? " right" : edge.x < 0 ? " left" : "")} edge");
-                return true;
-            }
-            m_Gesture = Gesture.Touch;
-            m_TouchPixel = PixelAt(local, k_Width, k_Height);
-            m_DragSent = Vector2.zero;
+            m_Gesture = Gesture.Resize;
+            m_ResizeSide = edge;
+            m_ResizeFrom = m_Width;
+            Debug.Log($"[Apps] Resizing from the bottom {(edge.x > 0 ? "right" : "left")} corner");
             return true;
         }
 
         public void EndPinch()
         {
-            switch (m_Gesture)
-            {
-                case Gesture.Touch:
-                    Debug.Log($"[Apps] Tap at {m_TouchPixel.x}, {m_TouchPixel.y}");
-                    m_Bridge.Tap(m_TouchPixel.x, m_TouchPixel.y);
-                    break;
-                case Gesture.Drag:
-                    SendDrag(true);
-                    break;
-                case Gesture.Resize:
-                    Debug.Log($"[Apps] Window resized to {m_Width:F2} m wide");
-                    break;
-            }
+            if (m_Gesture == Gesture.Resize)
+                Debug.Log($"[Apps] Window resized to {m_Width:F2} m wide");
             m_Gesture = Gesture.None;
         }
 
@@ -397,7 +446,7 @@ namespace CardboardXR.Demos.Apps
             var moved = tracker.PinchPoint - m_PinchStart;
             var handDistance = Mathf.Max(0.15f, Vector3.Distance(m_Core.Head.position, tracker.PinchPoint));
             var windowDistance = Vector3.Distance(m_Core.Head.position, m_Window.position);
-            var reach = Mathf.Clamp(windowDistance / handDistance, 1f, windowDistance / k_HandReach * 1.5f);
+            var reach = Mathf.Clamp(windowDistance / handDistance, 1f, k_MaxReach);
             return new Vector2(Vector3.Dot(moved, m_Window.right), Vector3.Dot(moved, m_Window.up)) * reach;
         }
 
@@ -411,16 +460,6 @@ namespace CardboardXR.Demos.Apps
             var moved = HandMoved();
             switch (m_Gesture)
             {
-                case Gesture.Touch:
-                    if ((tracker.PinchPoint - m_PinchStart).magnitude > k_DragStart)
-                    {
-                        m_Gesture = Gesture.Drag;
-                        Debug.Log("[Apps] Dragging");
-                    }
-                    break;
-                case Gesture.Drag:
-                    SendDrag(false);
-                    break;
                 case Gesture.Resize:
                     // The edge follows the hand outward or inward, the opposite edge staying put.
                     // A side edge grows by the hand's movement across, a top or bottom edge by its
@@ -440,30 +479,7 @@ namespace CardboardXR.Demos.Apps
             }
         }
 
-        // The app's content follows the hand: swipe from where the pinch touched by the hand's
-        // movement, in app pixels. Mid-drag, only once it has gone k_DragChunk past the last swipe.
-        void SendDrag(bool final)
-        {
-            var moved = HandMoved();
-            var pixels = new Vector2(moved.x / m_Width * k_Width, -moved.y / (m_Width * k_Height / k_Width) * k_Height);
-            var step = pixels - m_DragSent;
-            if (!final && step.magnitude < k_DragChunk)
-                return;
-            if (step.magnitude < 4f)
-                return;
-            var from = m_TouchPixel + Vector2Int.RoundToInt(m_DragSent);
-            var to = m_TouchPixel + Vector2Int.RoundToInt(pixels);
-            from = Clamp(from);
-            to = Clamp(to);
-            Debug.Log($"[Apps] Drag {from.x}, {from.y} to {to.x}, {to.y}{(final ? "" : " (on the way)")}");
-            m_Bridge.Swipe(from.x, from.y, to.x, to.y, k_SwipeMilliseconds);
-            m_DragSent = pixels;
-        }
-
-        static Vector2Int Clamp(Vector2Int pixel) =>
-            new(Mathf.Clamp(pixel.x, 0, k_Width - 1), Mathf.Clamp(pixel.y, 0, k_Height - 1));
-
-        // A screen tap, or a 3DoF pinch: no hand position, so a plain tap where the gaze is.
+        // A pinch or a screen tap with the gaze on the window: a tap in the app where the gaze is.
         void OnWindowClicked()
         {
             if (!GazeOnWindow(out var local))

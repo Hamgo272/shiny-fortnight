@@ -73,11 +73,38 @@ Shader "CardboardXR/Passthrough"
                 float outside = length(outside2);
                 float2 uv = clamp(p + 0.5, 0.0, 1.0);
                 if (outside <= 0.0)
-                    return half4(SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, uv).rgb, 1.0);
-                float lod = min(outside * 14.0, 7.0);
-                half3 color = SAMPLE_TEXTURE2D_LOD(_BaseMap, sampler_BaseMap, uv, lod).rgb;
-                half dim = lerp(0.9, 0.25, saturate(outside / 0.8));
-                return half4(color * dim, 1.0);
+                {
+                    // The image's last few percent fade to dark, so it ends softly rather than at a
+                    // hard edge (only without the fill, whose blurred surround carries on instead).
+                    half3 inside = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, uv).rgb;
+                    float2 edge = 0.5 - abs(p);
+                    half feather = _Fill > 1.0 ? 1.0 : smoothstep(0.0, 0.05, min(edge.x, edge.y));
+                    return half4(inside * feather, 1.0);
+                }
+                // A matte blur: one read of a small mip banded and swam as the image moved, so this
+                // averages eight reads on a ring around the edge point, from a mip that's already
+                // soft, widening with distance. Then it's eased off the sharp image over the first
+                // few percent, a little desaturated and dimmed, and dithered against banding.
+                float t = saturate(outside / 0.9);
+                float lod = lerp(3.5, 6.5, t);
+                float radius = lerp(0.03, 0.16, t);
+                half3 blur = 0;
+                [unroll]
+                for (int i = 0; i < 8; i++)
+                {
+                    float a = i * 0.785398 + 0.39;
+                    float2 tap = clamp(uv + float2(cos(a), sin(a)) * radius * float2(1.0, 1.6), 0.0, 1.0);
+                    blur += SAMPLE_TEXTURE2D_LOD(_BaseMap, sampler_BaseMap, tap, lod).rgb;
+                }
+                blur /= 8.0;
+                half3 sharp = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, uv).rgb;
+                half3 color = lerp(sharp, blur, smoothstep(0.0, 0.06, outside));
+                half luma = dot(color, half3(0.299, 0.587, 0.114));
+                color = lerp(color, luma.xxx, 0.3 * t);
+                color *= lerp(0.85, 0.3, t);
+                float noise = frac(sin(dot(input.positionCS.xy, float2(12.9898, 78.233))) * 43758.5453);
+                color += (noise - 0.5) / 255.0;
+                return half4(color, 1.0);
             }
             ENDHLSL
         }

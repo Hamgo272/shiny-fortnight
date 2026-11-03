@@ -18,7 +18,7 @@ P=${0:A:h:h}
 U=${UNITY:-/Applications/Unity/Hub/Editor/6000.6.0f1/Unity.app/Contents/MacOS/Unity}
 # Another app id (an iOS bundle id belongs to the Apple team that first signed it):
 #   CARDBOARDXR_BUNDLE_ID=com.example.cardboardxr zsh Tools/...
-BUNDLE=${CARDBOARDXR_BUNDLE_ID:-com.brenpoly.cardboardxr}
+BUNDLE=${CARDBOARDXR_BUNDLE_ID:-com.aira.cardboardxr}
 XCODE_PROJECT=$P/Builds/iOS/Unity-iPhone.xcodeproj
 DERIVED=$P/Builds/ios-derived
 LOGS=${TMPDIR:-/tmp}/cardboardxr

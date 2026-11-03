@@ -29,11 +29,12 @@ namespace CardboardXR.Stereo
         static readonly int k_DisplayTransformId = Shader.PropertyToID("_UnityDisplayTransform");
         // The nearest the image comes, in meters.
         const float k_MinDistance = 0.2f;
-        // The camera sees about 64 x 50 degrees, less than a viewer shows, which left a hard black
-        // frame around the image. The screen is drawn this much larger than the image: the image
-        // stays at true scale in the middle, and around it its edge carries on outward, more blurred
-        // and dimmer the farther out, so the eyes' periphery gets the room's light and colour
-        // instead of black. The "passFill 0" launch option turns it off.
+        // The camera sees about 72 x 45 degrees on the S23 FE, less than a viewer shows. The screen is
+        // drawn this much larger than the image: the image
+        // stays at true scale in the middle, and around it its edge carries on outward, blurred from
+        // mips and dimmed. A first version read one small mip, which banded and swam ("watery"); the
+        // shader now averages several reads into a matte blur and dithers it. "passFill 0" turns the
+        // fill off, and then the image's own border fades softly into the dark.
         const float k_Fill = 2.6f;
         static readonly int k_FillId = Shader.PropertyToID("_Fill");
         static float s_Fill = k_Fill;
