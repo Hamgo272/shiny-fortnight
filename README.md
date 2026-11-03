@@ -32,6 +32,13 @@ together, layer by layer.
 
 The pages are in `docs/`, served by GitHub Pages.
 
+## Install
+
+For Android, download the APK from [Releases](https://github.com/brenpoly/CardboardXR/releases) on
+an ARCore phone (Android 10 or later, 64-bit, with Vulkan) and open it. Android asks you to allow
+installing apps from your browser or file manager. For iOS there's no download yet: build it from
+source, below.
+
 ## Requirements
 
 - Unity **6000.6.0f1** with the Android and iOS build modules. The scripts expect it where Unity
@@ -68,6 +75,13 @@ Mode on the phone (Settings > Privacy & Security, which only appears after a fir
 and trusting the developer (Settings > General > VPN & Device Management). The phone must be
 unlocked to launch; a build takes about five minutes, so if it auto-locks in the meantime, unlock
 it and run `ios_launch.sh`.
+
+### Releases
+
+`Tools/release_android.sh 1.2.3` builds a release APK from a fresh clone of the public repository
+(so it holds only the placeholder videos), signs it with your release keystore, checks the signature
+and contents, and makes a draft GitHub release with it to review and publish. The script's header
+says where the keystore and its password go.
 
 ### Launch options
 

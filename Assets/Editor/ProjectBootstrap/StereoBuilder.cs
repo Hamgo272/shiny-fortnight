@@ -86,6 +86,13 @@ namespace ProjectBootstrap
                 Debug.Log($"[Build] App id {bundleId.Trim()}");
             }
             var development = System.Environment.GetEnvironmentVariable("CARDBOARDXR_DEVELOPMENT") == "1";
+            var version = PlayerSettings.bundleVersion;
+            var versionCode = PlayerSettings.Android.bundleVersionCode;
+            if (!ApplyRelease(target))
+            {
+                EditorApplication.Exit(1);
+                return;
+            }
             var report = BuildPipeline.BuildPlayer(new BuildPlayerOptions
             {
                 scenes = scenePaths,
@@ -93,11 +100,59 @@ namespace ProjectBootstrap
                 target = target,
                 options = development ? BuildOptions.Development : BuildOptions.None,
             });
+            // Not left in ProjectSettings, so local builds go back to Unity's debug key.
+            PlayerSettings.bundleVersion = version;
+            PlayerSettings.Android.bundleVersionCode = versionCode;
+            PlayerSettings.Android.useCustomKeystore = false;
+            PlayerSettings.Android.keystoreName = "";
+            PlayerSettings.Android.keyaliasName = "";
 
             var summary = report.summary;
             Debug.Log($"[Build] {(development ? "Development build" : "Build")} {summary.result}: {outputPath} " +
                       $"({summary.totalSize / 1e6:F1} MB, {summary.totalTime}, {summary.totalErrors} errors)");
             EditorApplication.Exit(summary.result == BuildResult.Succeeded ? 0 : 1);
+        }
+
+        // For published builds (Tools/release_android.sh). CARDBOARDXR_VERSION (1.2.3) sets the version
+        // and, on Android, a version code that rises with it (10203), so updates install over older
+        // releases. CARDBOARDXR_KEYSTORE signs the APK with that keystore instead of Unity's debug key,
+        // which differs on every machine; its password comes in CARDBOARDXR_KEYSTORE_PASS (also the key's,
+        // as in a PKCS12 keystore) and the key's alias in CARDBOARDXR_KEY_ALIAS, by default cardboardxr.
+        // False if they're set wrong, rather than shipping a build signed with the wrong key.
+        static bool ApplyRelease(BuildTarget target)
+        {
+            var version = System.Environment.GetEnvironmentVariable("CARDBOARDXR_VERSION");
+            if (!string.IsNullOrWhiteSpace(version))
+            {
+                var parts = version.Trim().Split('.');
+                if (parts.Length != 3 || !int.TryParse(parts[0], out var major) || !int.TryParse(parts[1], out var minor) ||
+                    !int.TryParse(parts[2], out var patch) || minor > 99 || patch > 99)
+                {
+                    Debug.LogError($"[Build] CARDBOARDXR_VERSION {version} isn't major.minor.patch (minor and patch under 100)");
+                    return false;
+                }
+                PlayerSettings.bundleVersion = version.Trim();
+                PlayerSettings.Android.bundleVersionCode = major * 10000 + minor * 100 + patch;
+                Debug.Log($"[Build] Version {PlayerSettings.bundleVersion} ({PlayerSettings.Android.bundleVersionCode})");
+            }
+
+            var keystore = System.Environment.GetEnvironmentVariable("CARDBOARDXR_KEYSTORE");
+            if (target != BuildTarget.Android || string.IsNullOrWhiteSpace(keystore))
+                return true;
+            var password = System.Environment.GetEnvironmentVariable("CARDBOARDXR_KEYSTORE_PASS");
+            if (!System.IO.File.Exists(keystore) || string.IsNullOrEmpty(password))
+            {
+                Debug.LogError($"[Build] Keystore {keystore} missing, or CARDBOARDXR_KEYSTORE_PASS unset");
+                return false;
+            }
+            var alias = System.Environment.GetEnvironmentVariable("CARDBOARDXR_KEY_ALIAS");
+            PlayerSettings.Android.useCustomKeystore = true;
+            PlayerSettings.Android.keystoreName = keystore;
+            PlayerSettings.Android.keystorePass = password;
+            PlayerSettings.Android.keyaliasName = string.IsNullOrWhiteSpace(alias) ? "cardboardxr" : alias.Trim();
+            PlayerSettings.Android.keyaliasPass = password;
+            Debug.Log($"[Build] Signing with {System.IO.Path.GetFileName(keystore)}, key {PlayerSettings.Android.keyaliasName}");
+            return true;
         }
 
         // Core first, since it's the scene the app starts in, then the lobby and the demos.
