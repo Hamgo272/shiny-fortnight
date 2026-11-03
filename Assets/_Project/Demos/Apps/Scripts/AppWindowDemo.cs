@@ -11,8 +11,10 @@ namespace CardboardXR.Demos.Apps
     // at that point in the app. The buttons below it go back, go to the app's start, scroll, bring the
     // window back in front, and leave. It centers itself on the first frame, since the head's first
     // pose can be off until the tracker settles. Needs Shizuku running on the phone.
-    // The demo runs in 3DoF with the AR session and hand tracking off, like the video player, since
-    // the app's own video decoding is most of the heat; PinchInput's light detector runs. Logs [Apps].
+    // The demo runs in 6DoF passthrough with hand tracking, so the window floats in the room and a
+    // pinch clicks. It was 3DoF with hands off, to save heat for the app's own video decoding, but
+    // turning on passthrough from the settings panel then left no pinch source (see PinchInput).
+    // Logs [Apps].
     public class AppWindowDemo : Demo
     {
         const string k_App = "com.google.android.youtube";

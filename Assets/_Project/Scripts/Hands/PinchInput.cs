@@ -74,6 +74,15 @@ namespace CardboardXR.Hands
             var wanted = m_On && threeDof && Time.unscaledTime - m_ThreeDofSince >= k_HandoffSeconds;
             if (m_Sensor.enabled != wanted)
                 m_Sensor.enabled = wanted;
+            // In 6DoF only hand tracking sees pinches. A demo that asked for 3DoF with hands off (Apps,
+            // 360 Video) is put in 6DoF when the user turns on passthrough or 6DoF from the settings
+            // panel, which left nothing watching for pinches: the panel's X could no longer be
+            // pressed. Hand tracking comes on then; DemoManager puts it back on leaving the demo.
+            if (m_On && !threeDof && !m_Tracker.enabled)
+            {
+                m_Tracker.enabled = true;
+                Debug.Log("[Pinch] 6DoF with hand tracking off: turned it on, the only pinch source in 6DoF");
+            }
 
             var handSeen = threeDof
                 ? m_Sensor.enabled && m_Sensor.SeesHand

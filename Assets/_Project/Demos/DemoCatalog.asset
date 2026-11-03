@@ -92,9 +92,9 @@ MonoBehaviour:
     Tint: {r: 0.72, g: 0.16, b: 0.16, a: 1}
     ScenePath: Assets/_Project/Demos/Apps/Apps.unity
     Requirements:
-      SixDof: 1
-      Passthrough: 1
-      Hands: 1
+      SixDof: 2
+      Passthrough: 2
+      Hands: 2
       ScanSurfaces: 0
       KeepPlacedObjects: 0
       HideCorePanel: 1
