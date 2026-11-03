@@ -17,7 +17,7 @@ KEYSTORE=${CARDBOARDXR_KEYSTORE:-$HOME/.cardboardxr/release.keystore}
 WORK=${TMPDIR:-/tmp}/cardboardxr-release
 TAG=v$VERSION
 APK=$WORK/CardboardXR-$VERSION.apk
-SDK=${U:h:h:h}/PlaybackEngines/AndroidPlayer/SDK
+SDK=${U:h:h:h:h}/PlaybackEngines/AndroidPlayer/SDK
 
 [ -f $KEYSTORE ] || { echo "No keystore at $KEYSTORE"; exit 1; }
 if pgrep -f "Unity.app/Contents/MacOS/Unity" >/dev/null; then echo "Unity is running; close it first"; exit 1; fi
