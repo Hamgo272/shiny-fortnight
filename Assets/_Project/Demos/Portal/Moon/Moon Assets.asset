@@ -1,0 +1,33 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2f4b5b9f8d49b1c4c985b2b0bd0b6f9a, type: 3}
+  m_Name: Moon Assets
+  m_EditorClassIdentifier: CardboardXR.Demos.Portal::CardboardXR.Demos.Portal.MoonAssets
+  Ground: {fileID: 2100000, guid: b6aab637eb4ee6d439bbcf4a3aee8c51, type: 2}
+  FarGround: {fileID: 2100000, guid: 13e41f803f7ac834ab7be2841e96d97a, type: 2}
+  RockMeshes:
+  - {fileID: -6515374482523227709, guid: 449ca3fa61de02c4fb0bfda87190f73a, type: 3}
+  - {fileID: 8902592029813573618, guid: faf9fa754b2963c45a4813b43513b3b4, type: 3}
+  - {fileID: -1695755305941879930, guid: 1af99f7f2c7297e42b011552730cdf49, type: 3}
+  RockMaterials:
+  - {fileID: 2100000, guid: f96c6c2875db9174f9d91f40a271d5d2, type: 2}
+  - {fileID: 2100000, guid: abc7259071aaf3949a4d72fe998443a4, type: 2}
+  - {fileID: 2100000, guid: 2fe7f515afd342a4e9ba4e441c027fdb, type: 2}
+  Sky: {fileID: 2100000, guid: c80698d3dc5ee1445aa508c92534a581, type: 2}
+  Stars: {fileID: 2100000, guid: 6900373eea1c0c247b602d4fd3436af9, type: 2}
+  Earth: {fileID: 2100000, guid: 25484d168a9c5b74394ad9e8efdae7bc, type: 2}
+  Fabric: {fileID: 2100000, guid: fadf1d9cb5724f04a827ec073ae38783, type: 2}
+  Rubber: {fileID: 2100000, guid: 5ba2e4f7bc2bc5f44a2b271a9b8c786b, type: 2}
+  Metal: {fileID: 2100000, guid: 0ee1b84f33c7bf542a017c2bfe680097, type: 2}
+  Band: {fileID: 2100000, guid: 3964911c57290b840ae1ce2d67d81814, type: 2}
+  Dust: {fileID: 2100000, guid: 54b47fa067170bd4e965d3b4019445e9, type: 2}
+  Mask: {fileID: 2100000, guid: 83f253ac2cbea4aab896b2cc3f4f5b3c, type: 2}

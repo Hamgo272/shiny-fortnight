@@ -64,3 +64,15 @@ The Android plugin in `Assets/Plugins/Android/CardboardXRWindows.androidlib` dep
 API libraries (https://github.com/RikkaApps/Shizuku-API), licensed under the MIT License. Copyright
 (c) 2021 RikkaW. The way it makes a trusted virtual display as the shell user follows scrcpy
 (https://github.com/Genymobile/scrcpy), licensed under the Apache License 2.0.
+
+## Moon world: regolith, rocks and the Earth
+
+The regolith textures in `Assets/_Project/Demos/Portal/Moon/Textures` (`Regolith_*` from Poly Haven's
+"Moon Dusted 02", `RegolithMacro_*` from "Moon 01") and the rock models and textures in
+`Assets/_Project/Demos/Portal/Moon/Rocks` (Poly Haven's "Moon Rock 01", "03" and "05") are from
+https://polyhaven.com, by Greg Zaal, Rico Cilliers, Jenelle van Heerden and Dario Barresi, released
+under CC0 (public domain). Renamed, otherwise unmodified.
+
+`Assets/_Project/Demos/Portal/Moon/Textures/Earth.jpg` is NASA's "Land, ocean, ice" Blue Marble map
+(Visible Earth, NASA Goddard Space Flight Center), via Wikimedia Commons
+(`File:Land_ocean_ice_2048.jpg`). NASA imagery is in the public domain.

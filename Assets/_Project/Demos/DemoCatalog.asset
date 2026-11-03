@@ -72,8 +72,8 @@ MonoBehaviour:
       HideCorePanel: 1
   - Id: portal
     Title: Portal
-    Description: Open a doorway on your floor and walk through it into another world, then look back at your room through the door.
-    Tagline: A doorway on your floor into another world
+    Description: Open a doorway on your floor and walk through it onto the Moon, or into a night world. On the Moon, crouch and press the soil with your suit glove or your own hand, then look back at your room through the door.
+    Tagline: A doorway on your floor to the Moon
     Icon: door_front
     Tint: {r: 0.23, g: 0.25, b: 0.6, a: 1}
     ScenePath: Assets/_Project/Demos/Portal/Portal.unity

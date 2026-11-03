@@ -153,16 +153,23 @@ phone's home screen. The app logs the options it received at startup (`[Stereo] 
 - **Orb Rush** is a one-handed game: orbs fly toward you and you hit them with your
   hand as they reach their rings. Face the way you want to play and press Start; Pause (on the
   score line above the track) resumes, restarts or quits a round. The best score is kept.
-- **Portal** opens a doorway on your floor (look at it and pinch) with a night world beyond it.
-  Walk through the frame, off the cable, and the world surrounds you, with your room showing
-  through the door behind; walk back through to return. It's in passthrough, so all of it is flat.
-- **Apps** shows a real Android app, for now YouTube, on a floating window, for which
+- **Portal** opens a doorway on your floor (look at it and pinch) with the Moon beyond it, or a
+  night world (*Moon* / *Night* on its panel). Walk through the frame, off the cable, and the world
+  surrounds you, with your room showing through the door behind; walk back through to return. On
+  the Moon: scanned regolith and rocks under a low sun with hard shadows, the Earth low in the black
+  sky, and a patch of soil by the door that dents under your fingertips and takes your boot prints
+  as you walk, throwing dust in clean arcs. Your hand shows as a suit glove, or as your real hand
+  through the camera (*Suit glove* / *Real hand*). It's in passthrough, so all of it is flat.
+- **Apps** shows a real Android app, for now YouTube, on a floating window, in passthrough, for which
   [Shizuku](https://shizuku.rikka.app/) must be running on the phone (allow CardboardXR at its prompt).
-  Look at the window and pinch or tap to tap there; the buttons below it go back, go to the app's
-  start, scroll, center the window and leave. Leaving closes the app.
+  Look at the window and pinch to tap there; pinch and move your hand to drag (scroll a feed);
+  pinch the window's edge, which lights up, and pull to resize it. The corner buttons move the
+  window (it hides; pinch again where you want it) and close the app. The buttons below go back, go
+  to the app's start, scroll, center the window and leave. Leaving closes the app.
 - **The settings panel**, in every scene: hold a hand up with its palm toward you and a gear button
   appears between your thumb and index finger; pinch to open the panel in front of you. It has
-  *Apps* (the app library), *Recenter* and *Scan Room* (in 6DoF: scans again, or ends a scan), and the toggles *6DoF* and *Passthrough*. It follows
+  *Apps* (the app library), *Recenter*, *Arrange* (gathers the floating windows and panels around
+  you, side by side, as Android XR does) and *Scan Room* (in 6DoF: scans again, or ends a scan), and the toggles *6DoF* and *Passthrough*. It follows
   you lazily as you turn; the *X* below it closes it. Look at a button and tap the screen, or
   pinch. Holding a tap recenters.
 - **Surfaces** are found by the lobby's scan at launch, which runs until it finds nothing new. When

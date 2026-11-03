@@ -48,3 +48,4 @@ MonoBehaviour:
   m_Ground: {fileID: 2100000, guid: e29e581898f674f9f8ce13711198ecec, type: 2}
   m_Glow: {fileID: 2100000, guid: 2b2b983a6e8ac47f0b585650cedf897f, type: 2}
   m_Mask: {fileID: 2100000, guid: 83f253ac2cbea4aab896b2cc3f4f5b3c, type: 2}
+  m_Moon: {fileID: 11400000, guid: 79e9651e273bcce4a80cd590797430fb, type: 2}

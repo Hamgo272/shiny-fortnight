@@ -54,6 +54,7 @@ namespace ProjectBootstrap
             EnsurePaint();
             EnsureRush();
             EnsurePortal();
+            MoonAssetsBuilder.Ensure();
             EnsureApps();
             AssetDatabase.SaveAssets();
             return catalog;

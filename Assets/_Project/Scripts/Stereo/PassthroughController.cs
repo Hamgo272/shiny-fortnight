@@ -29,6 +29,14 @@ namespace CardboardXR.Stereo
         static readonly int k_DisplayTransformId = Shader.PropertyToID("_UnityDisplayTransform");
         // The nearest the image comes, in meters.
         const float k_MinDistance = 0.2f;
+        // The camera sees about 64 x 50 degrees, less than a viewer shows, which left a hard black
+        // frame around the image. The screen is drawn this much larger than the image: the image
+        // stays at true scale in the middle, and around it its edge carries on outward, more blurred
+        // and dimmer the farther out, so the eyes' periphery gets the room's light and colour
+        // instead of black. The "passFill 0" launch option turns it off.
+        const float k_Fill = 2.6f;
+        static readonly int k_FillId = Shader.PropertyToID("_Fill");
+        static float s_Fill = k_Fill;
         // How quickly the image follows a change of focus: most of the way in this many seconds.
         const float k_FocusSeconds = 0.25f;
 
@@ -84,6 +92,7 @@ namespace CardboardXR.Stereo
             m_CameraManager = m_ArCamera.GetComponent<ARCameraManager>();
             m_PoseDriver = m_ArCamera.GetComponent<TrackedPoseDriver>();
             m_ShownDistance = m_Distance;
+            s_Fill = LaunchOptions.GetInt("passFill", 1) != 0 ? k_Fill : 1f;
         }
 
         // After the other components' OnEnable, so the mode set here sticks.
@@ -245,8 +254,17 @@ namespace CardboardXR.Stereo
             // write SV_Depth. Metal drops the draw when the target has no depth to write to, which
             // left the texture on the clear colour; GLES on Android tolerated it, so this only ever
             // showed up on the iPhone, as a black passthrough image with nothing logged.
-            m_Texture = new RenderTexture(width, height, 24) { name = "Passthrough" };
+            // Mipmapped, for the soft fill around the image (see k_Fill): the shader blurs the
+            // image's edge outward by reading ever smaller mips.
+            m_Texture = new RenderTexture(width, height, 24)
+            {
+                name = "Passthrough",
+                useMipMap = s_Fill > 1f,
+                autoGenerateMips = s_Fill > 1f,
+                wrapMode = TextureWrapMode.Clamp,
+            };
             m_Screen.material.mainTexture = m_Texture;
+            m_Screen.material.SetFloat(k_FillId, s_Fill);
         }
 
         // Reads one pixel back from the middle of the passthrough texture, once. A black quad in the
@@ -381,7 +399,8 @@ namespace CardboardXR.Stereo
             var d = m_ShownDistance;
             var screen = m_Screen.transform;
             screen.SetLocalPositionAndRotation(new Vector3(m_FrustumCenter.x * d, m_FrustumCenter.y * d, d), Quaternion.identity);
-            screen.localScale = new Vector3(m_FrustumSize.x * d, m_FrustumSize.y * d, 1f);
+            // Larger than the camera saw by the fill, which the shader keeps at true scale inside.
+            screen.localScale = new Vector3(m_FrustumSize.x * d * s_Fill, m_FrustumSize.y * d * s_Fill, 1f);
         }
     }
 }

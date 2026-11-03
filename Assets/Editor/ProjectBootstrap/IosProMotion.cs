@@ -1,3 +1,6 @@
+// Only with the iOS target active: UnityEditor.iOS exists only where iOS build support is installed,
+// and a Windows machine with just the Android modules has none.
+#if UNITY_IOS
 using System.IO;
 using UnityEditor;
 using UnityEditor.Build;
@@ -42,3 +45,4 @@ namespace ProjectBootstrap
         }
     }
 }
+#endif

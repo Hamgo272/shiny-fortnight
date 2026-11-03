@@ -5,7 +5,8 @@ using UnityEngine;
 
 namespace CardboardXR.Demos.Portal
 {
-    // A doorway standing on the floor, with a night world beyond it. Built in code when placed. Its
+    // A doorway standing on the floor, with another world beyond it: a night world of glowing crystals,
+    // or the Moon (MoonWorld), as Kind says, set before it starts. Built in code when placed. Its
     // "World" child is turned so +z runs from the doorway into the world; the player starts on the
     // -z side, in their room, which passthrough shows.
     //   Outside, a box of depth mask (CardboardXR/DepthMask) wraps the world's front half with a
@@ -45,6 +46,8 @@ namespace CardboardXR.Demos.Portal
         [SerializeField] Material m_Ground;
         [SerializeField] Material m_Glow;
         [SerializeField] Material m_Mask;
+        [Tooltip("What the Moon world is made of (see MoonAssets).")]
+        [SerializeField] MoonAssets m_Moon;
 
         Transform m_World;
         Transform m_Frame;
@@ -56,7 +59,20 @@ namespace CardboardXR.Demos.Portal
         MaterialPropertyBlock m_Block;
         Coroutine m_Animating;
 
+        public enum WorldKind
+        {
+            Night,
+            Moon,
+        }
+
         public bool IsInside { get; private set; }
+
+        // Which world lies beyond the door. Set it before the portal's first frame; the Moon falls back
+        // to the night world if its assets are missing.
+        public WorldKind Kind { get; set; } = WorldKind.Moon;
+
+        // The Moon world, while that's the one shown.
+        public MoonWorld Moon { get; private set; }
 
         // True when the player steps in, false when they step back out.
         public event Action<bool> Crossed;
@@ -156,6 +172,8 @@ namespace CardboardXR.Demos.Portal
         void SetInside(bool inside, bool announce)
         {
             IsInside = inside;
+            if (Moon != null)
+                Moon.SetInside(inside);
             m_BackHalf.SetActive(inside);
             m_OutsideMask.SetActive(!inside);
             m_InsideMask.SetActive(inside);
@@ -189,6 +207,22 @@ namespace CardboardXR.Demos.Portal
             m_BackHalf.transform.SetParent(m_World, false);
             var back = m_BackHalf.transform;
 
+            if (Kind == WorldKind.Moon && m_Moon == null)
+            {
+                Debug.LogWarning("[Portal] No Moon assets on the portal: opening the night world instead");
+                Kind = WorldKind.Night;
+            }
+            if (Kind == WorldKind.Moon)
+            {
+                Moon = m_World.gameObject.AddComponent<MoonWorld>();
+                Moon.Build(m_Moon, front, back);
+                m_OutsideMask = BuildOutsideMask(MoonWorld.k_BoxHalfWidth, MoonWorld.k_BoxHeight, MoonWorld.k_BoxDepth, MoonWorld.k_BoxBottom);
+                m_InsideMask = Quad("Inside Mask", m_World, new Vector3(0f, k_DoorHeight / 2f, 0f), new Vector2(k_DoorWidth, k_DoorHeight),
+                    Quaternion.identity, m_Mask).gameObject;
+                Debug.Log("[Portal] The Moon is beyond the door");
+                return;
+            }
+
             // Sky, split at the doorway's plane: the front half is what shows through the door.
             Dome("Sky Front", front, -90f, 90f);
             Dome("Sky Back", back, 90f, 270f);
@@ -216,35 +250,36 @@ namespace CardboardXR.Demos.Portal
                 crystal.localRotation = Quaternion.Euler(0f, 45f + i * 20f, (float)random.NextDouble() * 12f - 6f);
             }
 
-            m_OutsideMask = BuildOutsideMask();
+            m_OutsideMask = BuildOutsideMask(k_BoxHalfWidth, k_BoxHeight, k_BoxDepth, -0.5f);
             m_InsideMask = Quad("Inside Mask", m_World, new Vector3(0f, k_DoorHeight / 2f, 0f), new Vector2(k_DoorWidth, k_DoorHeight),
                 Quaternion.identity, m_Mask).gameObject;
         }
 
-        // The box around the world's front half, open only where the door is.
-        GameObject BuildOutsideMask()
+        // The box around the world's front half, open only where the door is: halfWidth across from the
+        // door's middle, boxHeight up from bottom (under the floor, below the world's lowest ground), and
+        // depth into the world.
+        GameObject BuildOutsideMask(float halfWidth, float boxHeight, float depth, float bottom)
         {
             var mask = new GameObject("Outside Mask").transform;
             mask.SetParent(m_World, false);
-            const float bottom = -0.5f;
-            var middleY = bottom + k_BoxHeight / 2f;
+            var middleY = bottom + boxHeight / 2f;
             var halfDoor = k_DoorWidth / 2f;
-            Quad("Far", mask, new Vector3(0f, middleY, k_BoxDepth), new Vector2(2f * k_BoxHalfWidth, k_BoxHeight), Quaternion.identity, m_Mask);
-            Quad("Left", mask, new Vector3(-k_BoxHalfWidth, middleY, k_BoxDepth / 2f), new Vector2(k_BoxDepth, k_BoxHeight),
+            Quad("Far", mask, new Vector3(0f, middleY, depth), new Vector2(2f * halfWidth, boxHeight), Quaternion.identity, m_Mask);
+            Quad("Left", mask, new Vector3(-halfWidth, middleY, depth / 2f), new Vector2(depth, boxHeight),
                 Quaternion.Euler(0f, 90f, 0f), m_Mask);
-            Quad("Right", mask, new Vector3(k_BoxHalfWidth, middleY, k_BoxDepth / 2f), new Vector2(k_BoxDepth, k_BoxHeight),
+            Quad("Right", mask, new Vector3(halfWidth, middleY, depth / 2f), new Vector2(depth, boxHeight),
                 Quaternion.Euler(0f, 90f, 0f), m_Mask);
-            Quad("Top", mask, new Vector3(0f, bottom + k_BoxHeight, k_BoxDepth / 2f), new Vector2(2f * k_BoxHalfWidth, k_BoxDepth),
+            Quad("Top", mask, new Vector3(0f, bottom + boxHeight, depth / 2f), new Vector2(2f * halfWidth, depth),
                 Quaternion.Euler(90f, 0f, 0f), m_Mask);
-            Quad("Bottom", mask, new Vector3(0f, bottom, k_BoxDepth / 2f), new Vector2(2f * k_BoxHalfWidth, k_BoxDepth),
+            Quad("Bottom", mask, new Vector3(0f, bottom, depth / 2f), new Vector2(2f * halfWidth, depth),
                 Quaternion.Euler(90f, 0f, 0f), m_Mask);
             // The front, in four pieces around the doorway.
-            var sideWidth = k_BoxHalfWidth - halfDoor;
-            Quad("Front Left", mask, new Vector3(-halfDoor - sideWidth / 2f, middleY, 0f), new Vector2(sideWidth, k_BoxHeight),
+            var sideWidth = halfWidth - halfDoor;
+            Quad("Front Left", mask, new Vector3(-halfDoor - sideWidth / 2f, middleY, 0f), new Vector2(sideWidth, boxHeight),
                 Quaternion.identity, m_Mask);
-            Quad("Front Right", mask, new Vector3(halfDoor + sideWidth / 2f, middleY, 0f), new Vector2(sideWidth, k_BoxHeight),
+            Quad("Front Right", mask, new Vector3(halfDoor + sideWidth / 2f, middleY, 0f), new Vector2(sideWidth, boxHeight),
                 Quaternion.identity, m_Mask);
-            var aboveHeight = bottom + k_BoxHeight - k_DoorHeight;
+            var aboveHeight = bottom + boxHeight - k_DoorHeight;
             Quad("Above Door", mask, new Vector3(0f, k_DoorHeight + aboveHeight / 2f, 0f), new Vector2(k_DoorWidth, aboveHeight),
                 Quaternion.identity, m_Mask);
             Quad("Below Door", mask, new Vector3(0f, bottom / 2f, 0f), new Vector2(k_DoorWidth, -bottom), Quaternion.identity, m_Mask);

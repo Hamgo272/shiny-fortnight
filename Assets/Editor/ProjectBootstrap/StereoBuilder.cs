@@ -78,12 +78,22 @@ namespace ProjectBootstrap
         // signed it. The first scene is the one the app starts in.
         static void BuildAndExit(string[] scenePaths, string outputPath, BuildTarget target)
         {
+            var namedTarget = NamedBuildTarget.FromBuildTargetGroup(BuildPipeline.GetBuildTargetGroup(target));
+            var savedId = PlayerSettings.GetApplicationIdentifier(namedTarget);
+            var savedName = PlayerSettings.productName;
             var bundleId = System.Environment.GetEnvironmentVariable("CARDBOARDXR_BUNDLE_ID");
             if (!string.IsNullOrWhiteSpace(bundleId))
             {
                 PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.FromBuildTargetGroup(BuildPipeline.GetBuildTargetGroup(target)),
                     bundleId.Trim());
                 Debug.Log($"[Build] App id {bundleId.Trim()}");
+            }
+            // CARDBOARDXR_APP_NAME: the name under the icon, to tell a second install apart.
+            var appName = System.Environment.GetEnvironmentVariable("CARDBOARDXR_APP_NAME");
+            if (!string.IsNullOrWhiteSpace(appName))
+            {
+                PlayerSettings.productName = appName.Trim();
+                Debug.Log($"[Build] App name {appName.Trim()}");
             }
             var development = System.Environment.GetEnvironmentVariable("CARDBOARDXR_DEVELOPMENT") == "1";
             var version = PlayerSettings.bundleVersion;
@@ -106,6 +116,8 @@ namespace ProjectBootstrap
             PlayerSettings.Android.useCustomKeystore = false;
             PlayerSettings.Android.keystoreName = "";
             PlayerSettings.Android.keyaliasName = "";
+            PlayerSettings.SetApplicationIdentifier(namedTarget, savedId);
+            PlayerSettings.productName = savedName;
 
             var summary = report.summary;
             Debug.Log($"[Build] {(development ? "Development build" : "Build")} {summary.result}: {outputPath} " +
@@ -775,7 +787,7 @@ namespace ProjectBootstrap
         // Recenter and Scan Room (6DoF only); and the toggles, 6DoF and Passthrough, shown selected
         // while on. (Pinching is always on: see PinchInput.) M3Toolbar lays out only the items
         // showing. Scan Room is added once the room boundary exists, then ArrangeToolbar finishes it.
-        // Returns the items (Apps, Recenter, 6DoF, Passthrough, then one empty for Scan Room) and the panel.
+        // Returns the items (Apps, Recenter, 6DoF, Passthrough, one empty for Scan Room, Arrange) and the panel.
         static (M3Button[] items, RectTransform panel) BuildToolbar(HeadPoseFusion fusion,
             PassthroughController passthrough, DemoManager demos)
         {
@@ -790,7 +802,7 @@ namespace ProjectBootstrap
 
             // The view switch isn't here: it's on the screen itself, in the settings menu, since it's
             // pressed with the phone in hand where this panel can't be reached.
-            var items = new M3Button[5];
+            var items = new M3Button[6];
             // Apps shows the app library above the panel (BuildLibrary), the way to the lobby and
             // between demos.
             var library = demos.gameObject.AddComponent<AppLibrary>();
@@ -798,6 +810,12 @@ namespace ProjectBootstrap
             items[1] = ToolbarItem(panel, "Recenter", "my_location", "Recenter", fusion.Recenter);
             items[2] = ToolbarItem(panel, "Tracking Mode", "view_in_ar", "6DoF", fusion.ToggleMode);
             items[3] = ToolbarItem(panel, "Passthrough", "visibility", "Passthrough", passthrough.Toggle);
+            // Arrange gathers the scene's floating windows around the user, as Android XR does.
+            var arranger = fusion.gameObject.AddComponent<CardboardXR.UI.WindowArranger>();
+            var serializedArranger = new SerializedObject(arranger);
+            serializedArranger.FindProperty("m_Head").objectReferenceValue = fusion.transform;
+            serializedArranger.ApplyModifiedPropertiesWithoutUndo();
+            items[5] = ToolbarItem(panel, "Arrange", "view_agenda", "Arrange", arranger.Arrange);
             return (items, panel);
         }
 
@@ -871,9 +889,9 @@ namespace ProjectBootstrap
         // Orders the items into their groups, with a divider before each group after the first.
         static void ArrangeToolbar(RectTransform panel, M3Button[] items)
         {
-            // Apps | Recenter, Scan Room | 6DoF, Passthrough.
-            var order = new[] { items[0], items[1], items[4], items[2], items[3] };
-            var groups = new[] { 0, 1, 1, 2, 2 };
+            // Apps | Recenter, Arrange, Scan Room | 6DoF, Passthrough.
+            var order = new[] { items[0], items[1], items[5], items[4], items[2], items[3] };
+            var groups = new[] { 0, 1, 1, 1, 2, 2 };
             var dividers = new Image[3];
             for (var g = 1; g < dividers.Length; g++)
             {
