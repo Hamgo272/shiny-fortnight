@@ -76,13 +76,14 @@ One UI 6.1) with Shizuku.
   (which animates each notch) stutter. YouTube was fine either way.
 - **Moon cinema** (window panel's Moon / Room button, YouTube and Browser): the Moon instead of
   the room, built by `MoonWorld` with `Lite` set (sky, Earth, ground and rocks; no sun shadows, a
-  coarser near ground, no soil, dust, boot prints or hand). It switches to 3DoF with passthrough, ARCore
-  and hand tracking off, which runs much cooler with video; pinch taps still work (pinch sensor).
-  Room switches back to 6DoF passthrough with hands. The Moon is put under the eyes facing the gaze,
-  and the window re-centred, a few frames after the switch. The Apps scene gets the Moon's assets on
+  coarser near ground, no soil, dust, boot prints or hand). Passthrough goes off; tracking stays 6DoF
+  with hands (the user asked for 6DoF after trying 3DoF, which ran cooler but couldn't lean, scroll
+  with two fingers or grab). Room switches passthrough back on. The Moon's ground goes on the real
+  floor (`RoomBoundary.FloorHeight`) or 1.5 m below the eyes, facing the gaze, and the window is
+  re-centred, a few frames after the switch. The Apps scene gets the Moon's assets on
   each build (`DemoScenes.EnsureAppsMoon`). Opening YouTube from Portal still leaves the Moon (demos
   don't overlap): use the Moon button instead.
-- **Fist grab** (from the parked branch, reworked): look at the window and make a fist, and the window
+- **Fist grab: removed after the phone test.** A pinch curls the fingers enough to pass the fist test, so every tap on the window grabbed it (blue outline, window following the hand). The user wants the window moved only with the Move button. `FollowFist` is kept unused. What it was: look at the window and make a fist, and the window
   follows the hand round you at its distance; open the hand to let go. 6DoF with hands only. The
   parked version held every tap back 150 ms in case a fist was forming; now taps are instead ignored
   while grabbed and for 0.5 s after (the pinch a closing fist passes through releases when the hand

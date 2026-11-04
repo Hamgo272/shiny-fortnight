@@ -115,6 +115,9 @@ namespace CardboardXR.Stereo
         public int SurfaceCount => m_TrackedSurfaces;
         public float SurfaceArea => m_SurfaceArea;
         public bool HasFloor => m_Floor.HasValue;
+        // The floor's height in world space, once found and while in 6DoF: what a virtual ground (the
+        // Apps demo's Moon cinema) is put on.
+        public float? FloorHeight { get; private set; }
 
         // Whether hand tracking should pause, leaving the CPU to plane detection: at the start of a scan,
         // for at most k_HandPauseSeconds of tracking. A floor scan with the floor never in view paused
@@ -171,6 +174,7 @@ namespace CardboardXR.Stereo
 
             var sessionToWorld = m_Fusion.SessionToWorld;
             transform.SetPositionAndRotation(sessionToWorld.position, sessionToWorld.rotation);
+            FloorHeight = m_Floor.HasValue ? sessionToWorld.position.y + m_Floor.Value : (float?)null;
             var head = m_Fusion.transform.position;
             Shader.SetGlobalVector(k_HeadId, head);
             Shader.SetGlobalMatrix(k_WorldToSessionId, transform.worldToLocalMatrix);

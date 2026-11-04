@@ -68,9 +68,10 @@ namespace CardboardXR.Demos.Apps
         const float k_PanelHeight = 112f;
         // The panel's width in dp: as wide as its buttons need (BuildPanel).
         float m_PanelWidth = 700f;
-        // The Moon cinema: the Moon instead of the room, in 3DoF with the camera, ARCore and hand
-        // tracking off, which runs much cooler while the app plays video. The Moon's ground sits this
-        // far below the eyes.
+        // The Moon cinema: the Moon instead of the room, passthrough off, in 6DoF with hands (the user
+        // asked for 6DoF: you can lean and walk, and two-finger scroll and the fist grab work; 3DoF ran
+        // cooler). The Moon's ground goes on the real floor if the room scan found it, else this far
+        // below the eyes.
         const float k_MoonEyeHeight = 1.5f;
         bool m_OnMoon;
         GameObject m_MoonRoot;
@@ -89,7 +90,7 @@ namespace CardboardXR.Demos.Apps
             Grab,
         }
 
-        // The fist grab, as Android XR's: look at the window and close your hand into a fist, and the
+        // Off (see Update): taps read as fists. The fist grab, as Android XR's: look at the window and close your hand into a fist, and the
         // window follows the hand round you at its distance (the hand's movement scaled up by
         // k_GrabReach); open the hand to let it go. Needs hand tracking (6DoF), so not in the Moon
         // cinema. A finger is curled when its tip is nearer the palm's middle than k_CurledRatio palm
@@ -234,7 +235,10 @@ namespace CardboardXR.Demos.Apps
                 PlaceWhereLooking();
             FollowPinch();
             FollowTwoFingers();
-            FollowFist();
+            // No fist grab: a pinch curls the fingers enough to read as a fist, so every tap on the
+            // window grabbed it (lit blue and followed the hand). The user wants the window moved
+            // only with the Move button above it. FollowFist is kept, unused, if it comes back with
+            // a stricter fist test.
             ShowEdge();
             ShowRipple();
         }
@@ -360,8 +364,7 @@ namespace CardboardXR.Demos.Apps
             }
         }
 
-        // The Moon cinema on or off. On: 3DoF with the camera, ARCore and hands off (so it runs much
-        // cooler), and the Moon built around you, the window put back in front once the new head pose
+        // The Moon cinema on or off. On: 6DoF with hands, passthrough off, and the Moon built around you, the window put back in front once the new head pose
         // has settled. Off: back to the room in 6DoF passthrough with hands, as the demo starts.
         // Leaving the demo puts back what was on before it (DemoManager), so nothing to undo there.
         void SetMoon(bool on)
@@ -372,7 +375,7 @@ namespace CardboardXR.Demos.Apps
             m_MoonButton.Text = on ? "Room" : "Moon";
             if (on)
             {
-                m_Core.Apply(new CoreState(false, false, false));
+                m_Core.Apply(new CoreState(true, false, true));
                 m_MoonRoot = new GameObject("Moon Cinema");
                 m_MoonRoot.transform.SetParent(transform, false);
                 var moon = m_MoonRoot.AddComponent<MoonWorld>();
@@ -385,7 +388,7 @@ namespace CardboardXR.Demos.Apps
                 m_MoonRoot = null;
                 m_Core.Apply(new CoreState(true, true, true));
             }
-            Debug.Log($"[Apps] Moon cinema {(on ? "on: 3DoF, camera and hands off" : "off: back to the room")}");
+            Debug.Log($"[Apps] Moon cinema {(on ? "on: 6DoF, passthrough off" : "off: back to the room")}");
             StartCoroutine(SettleAfterSwitch());
         }
 
@@ -400,7 +403,10 @@ namespace CardboardXR.Demos.Apps
                 var head = m_Core.Head;
                 var flat = Vector3.ProjectOnPlane(head.forward, Vector3.up);
                 var yaw = flat.sqrMagnitude > 1e-4f ? Quaternion.LookRotation(flat.normalized) : Quaternion.identity;
-                m_MoonRoot.transform.SetPositionAndRotation(head.position - Vector3.up * k_MoonEyeHeight, yaw);
+                var floor = m_Core.Boundary != null ? m_Core.Boundary.FloorHeight : null;
+                var ground = floor ?? head.position.y - k_MoonEyeHeight;
+                m_MoonRoot.transform.SetPositionAndRotation(new Vector3(head.position.x, ground, head.position.z), yaw);
+                Debug.Log($"[Apps] Moon ground {head.position.y - ground:F2} m below the eyes ({(floor.HasValue ? "the real floor" : "no floor found")})");
             }
             PlaceWindow();
         }
