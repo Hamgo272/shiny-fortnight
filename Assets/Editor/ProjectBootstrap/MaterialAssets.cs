@@ -28,7 +28,13 @@ namespace ProjectBootstrap
             var assets = AssetDatabase.LoadAssetAtPath<M3Assets>(path);
             if (assets != null && assets.Regular != null && assets.Medium != null && assets.Icons != null && assets.Round != null)
             {
-                AddMissingIcons(assets.Icons);
+                var icons = AddMissingIcons(assets.Icons);
+                if (icons != assets.Icons)
+                {
+                    assets.Set(assets.Regular, assets.Medium, icons, assets.Round);
+                    EditorUtility.SetDirty(assets);
+                    AssetDatabase.SaveAssets();
+                }
                 return;
             }
 
@@ -168,26 +174,66 @@ namespace ProjectBootstrap
             return fontAsset;
         }
 
-        // Icons named since the icon font was made: its atlas holds only the listed glyphs.
-        static void AddMissingIcons(TMP_FontAsset icons)
+        // Add icons introduced since the TMP asset was generated. If an old asset cannot add them,
+        // rebuild it from the bundled source font and update M3Assets to reference the replacement.
+        static TMP_FontAsset AddMissingIcons(TMP_FontAsset icons)
         {
-            var missing = new System.Text.StringBuilder();
-            var count = 0;
-            foreach (var codepoint in M3Icons.Codepoints.Values)
-            {
-                if (icons.characterLookupTable.ContainsKey((uint)codepoint))
-                    continue;
-                missing.Append(char.ConvertFromUtf32(codepoint));
-                count++;
-            }
+            var missing = MissingIcons(icons);
             if (missing.Length == 0)
-                return;
+                return icons;
+
             icons.atlasPopulationMode = AtlasPopulationMode.Dynamic;
-            icons.TryAddCharacters(missing.ToString(), out _);
+            var added = icons.TryAddCharacters(missing, out var stillMissing);
             icons.atlasPopulationMode = AtlasPopulationMode.Static;
             EditorUtility.SetDirty(icons);
             AssetDatabase.SaveAssets();
-            Debug.Log($"[MaterialAssets] Added {count} icons to the icon font");
+
+            missing = MissingIcons(icons);
+            if (missing.Length == 0)
+            {
+                Debug.Log($"[MaterialAssets] Added {M3Icons.Codepoints.Count} icon glyph(s) to the existing icon font");
+                return icons;
+            }
+
+            Debug.LogWarning(
+                $"[MaterialAssets] Existing icon font could not add {FormatCodepoints(missing)}" +
+                (string.IsNullOrEmpty(stillMissing) ? "" : $"; TMP reported missing {FormatCodepoints(stillMissing)}") +
+                ". Rebuilding the icon font asset from the bundled OTF.");
+
+            var path = $"{UiFolder}/Material Icons SDF.asset";
+            if (!AssetDatabase.DeleteAsset(path))
+                Debug.LogError($"[MaterialAssets] Could not delete stale icon font asset at {path}");
+            AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+
+            var rebuilt = FontAsset("MaterialIconsRound-Regular.otf", "Material Icons SDF", M3Icons.AllGlyphs());
+            if (rebuilt == null)
+                return icons;
+
+            missing = MissingIcons(rebuilt);
+            if (missing.Length > 0)
+                Debug.LogError($"[MaterialAssets] Bundled icon font is still missing {FormatCodepoints(missing)}");
+            else
+                Debug.Log("[MaterialAssets] Rebuilt the icon font asset and verified all requested glyphs");
+            return rebuilt;
+        }
+
+        static string MissingIcons(TMP_FontAsset icons)
+        {
+            var missing = new System.Text.StringBuilder();
+            foreach (var codepoint in M3Icons.Codepoints.Values)
+            {
+                if (!icons.characterLookupTable.ContainsKey((uint)codepoint))
+                    missing.Append(char.ConvertFromUtf32(codepoint));
+            }
+            return missing.ToString();
+        }
+
+        static string FormatCodepoints(string characters)
+        {
+            var codepoints = new System.Collections.Generic.List<string>();
+            foreach (var character in characters)
+                codepoints.Add($"U+{(int)character:X4}");
+            return string.Join(", ", codepoints);
         }
 
         static Sprite RoundSprite()
