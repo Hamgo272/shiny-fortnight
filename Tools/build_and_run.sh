@@ -21,6 +21,13 @@ mkdir -p $LOGS
 cd $P || exit 1
 if pgrep -f "Unity.app/Contents/MacOS/Unity" >/dev/null; then echo "Unity is running; close it first"; exit 1; fi
 
+echo "== prepare generated assets"
+$U -batchmode -projectPath $P -executeMethod ProjectBootstrap.StereoBuilder.PrepareAssets -logFile $LOGS/prepare.log
+if ! grep -q "\\[Build\\] Material UI assets prepared" $LOGS/prepare.log; then
+    grep -E "error CS|Exception|MaterialAssets|Build" $LOGS/prepare.log | tail -30
+    exit 1
+fi
+
 echo "== EditMode tests"
 rm -f $LOGS/tests.xml
 $U -batchmode -projectPath $P -runTests -testPlatform EditMode -testResults $LOGS/tests.xml -logFile $LOGS/tests.log
