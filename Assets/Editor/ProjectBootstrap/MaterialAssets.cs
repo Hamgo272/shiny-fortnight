@@ -28,10 +28,10 @@ namespace ProjectBootstrap
             var assets = AssetDatabase.LoadAssetAtPath<M3Assets>(path);
             if (assets != null && assets.Regular != null && assets.Medium != null && assets.Icons != null && assets.Round != null)
             {
-                var icons = AddMissingIcons(assets.Icons);
-                if (icons != assets.Icons)
+                var updatedIcons = AddMissingIcons(assets.Icons);
+                if (updatedIcons != assets.Icons)
                 {
-                    assets.Set(assets.Regular, assets.Medium, icons, assets.Round);
+                    assets.Set(assets.Regular, assets.Medium, updatedIcons, assets.Round);
                     EditorUtility.SetDirty(assets);
                     AssetDatabase.SaveAssets();
                 }
