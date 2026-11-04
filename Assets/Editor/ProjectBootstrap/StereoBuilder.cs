@@ -59,6 +59,16 @@ namespace ProjectBootstrap
         // The passthrough screen, which the AR camera must not render into its own texture.
         const int PassthroughLayer = 29;
 
+        // Run generated-asset preparation before EditMode tests, which execute before BuildAndroid.
+        // Invoke with: -executeMethod ProjectBootstrap.StereoBuilder.PrepareAssets
+        public static void PrepareAssets()
+        {
+            MaterialAssets.Ensure();
+            AssetDatabase.SaveAssets();
+            Debug.Log("[Build] Material UI assets prepared");
+            EditorApplication.Exit(0);
+        }
+
         // Invoke with: -executeMethod ProjectBootstrap.StereoBuilder.BuildAndroid
         public static void BuildAndroid()
         {
