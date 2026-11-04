@@ -55,6 +55,18 @@ namespace CardboardXR.UI
             // A play button in a rounded rectangle: the Apps demo, which opens YouTube.
             ["smart_display"] = 0xf06a,
             ["bolt"] = 0xea0b,
+            // A globe: the Browser app.
+            ["language"] = 0xe894,
+            // The browser's keyboard.
+            ["keyboard"] = 0xe312,
+            ["keyboard_hide"] = 0xe31a,
+            ["backspace"] = 0xe14a,
+            // The settings panel's Controls (sliders), with volume and brightness and their steps.
+            ["tune"] = 0xe429,
+            ["volume_up"] = 0xe050,
+            ["brightness_6"] = 0xe3ac,
+            ["remove"] = 0xe15b,
+            ["add"] = 0xe145,
         };
 
         // The icon's character, for a TMP text set in the icon font; empty for an unknown name.

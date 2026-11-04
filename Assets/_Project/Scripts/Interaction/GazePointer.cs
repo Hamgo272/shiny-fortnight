@@ -116,6 +116,9 @@ namespace CardboardXR.Interaction
             }
             eventData.pointerPress = m_Pressed;
             Debug.Log($"[Gaze] Pressed {(m_Target != null ? m_Target.name : "nothing")} {TargetDistance:F2} m away");
+            if (m_Reticle != null)
+                m_Reticle.Press(true);
+            ClickSound.Play();
         }
 
         // Releases the press, and clicks if the gaze is still on what was pressed.
@@ -127,6 +130,8 @@ namespace CardboardXR.Interaction
                 return;
 
             m_Held = false;
+            if (m_Reticle != null)
+                m_Reticle.Press(false);
             var eventData = EventData;
             if (m_Pressed != null)
                 ExecuteEvents.Execute(m_Pressed, eventData, ExecuteEvents.pointerUpHandler);

@@ -119,7 +119,7 @@ public final class AppWindows {
                 .daemon(false)
                 .processNameSuffix("windows")
                 .tag("windows")
-                .version(3);
+                .version(6);
         try {
             Shizuku.bindUserService(sArgs, sConnection);
         } catch (RuntimeException e) {
@@ -142,6 +142,7 @@ public final class AppWindows {
             data.writeInt(sHeight);
             data.writeInt(sDpi);
             data.writeString(sAppPackage + "/" + UNITY_ACTIVITY);
+            data.writeInt(unityTask());
             sService.transact(WindowService.CREATE, data, reply, 0);
             int display = reply.readInt();
             Log.i(TAG, "Display " + display);
@@ -204,10 +205,62 @@ public final class AppWindows {
         send(WindowService.SWIPE, data);
     }
 
+    private static volatile boolean sPaused;
+    private static final Handler sMain = new Handler(android.os.Looper.getMainLooper());
+
+    // Unity's pause state (OnApplicationPause), so focus() can tell leaving the app from losing focus
+    // to the window's app.
+    public static void paused(boolean paused) {
+        sPaused = paused;
+    }
+
+    // Unity lost the phone's focus (OnApplicationFocus(false) with a window open): get it back, unless
+    // the user is leaving the app, which pauses Unity within a moment of losing focus.
+    public static void focus() {
+        sMain.postDelayed(() -> {
+            if (sPaused || sState != RUNNING)
+                return;
+            send(WindowService.FOCUS, Parcel.obtain());
+        }, 300);
+    }
+
+    // Unity's activity's task id, or -1.
+    private static int unityTask() {
+        try {
+            Object activity = Class.forName("com.unity3d.player.UnityPlayer").getField("currentActivity").get(null);
+            return activity == null ? -1 : ((android.app.Activity) activity).getTaskId();
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            Log.w(TAG, "Couldn't find Unity's task", e);
+            return -1;
+        }
+    }
+
+    public static void scroll(int x, int y, int notches, int swipeDistance) {
+        Parcel data = Parcel.obtain();
+        data.writeInt(x);
+        data.writeInt(y);
+        data.writeInt(notches);
+        data.writeInt(swipeDistance);
+        send(WindowService.SCROLL, data);
+    }
+
     public static void key(int keyCode) {
         Parcel data = Parcel.obtain();
         data.writeInt(keyCode);
         send(WindowService.KEY, data);
+    }
+
+    // Types text into whatever has focus on the window's display, such as a page's search box.
+    public static void text(String text) {
+        Parcel data = Parcel.obtain();
+        data.writeString(text);
+        send(WindowService.TEXT, data);
+    }
+
+    public static void openUrl(String url) {
+        Parcel data = Parcel.obtain();
+        data.writeString(url);
+        send(WindowService.OPEN_URL, data);
     }
 
     private static void send(int code, Parcel data) {

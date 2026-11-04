@@ -149,6 +149,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: CardboardXR.Demos.Apps::CardboardXR.Demos.Apps.AppWindowDemo
   m_Material: {fileID: 2100000, guid: 68404086db57f414cb14fadc3d91f4b4, type: 2}
+  m_MoonAssets: {fileID: 11400000, guid: 79e9651e273bcce4a80cd590797430fb, type: 2}
 --- !u!4 &2016435826
 Transform:
   m_ObjectHideFlags: 0

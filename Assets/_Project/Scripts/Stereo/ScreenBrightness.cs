@@ -12,11 +12,34 @@ namespace CardboardXR.Stereo
     //   a crash, or swiping it away) gets no chance to put it back: started again with the screen still
     //   at this app's level, it takes the saved level as the user's. iOS still dims a hot phone
     //   whatever the app asks. (The screen never sleeps while the app runs: StereoRig sets
-    //   Screen.sleepTimeout.) Logs [Stereo].
+    //   Screen.sleepTimeout.)
+    // The settings panel's Controls set the level (Level), which is kept for next time (k_LevelKey);
+    // the launch option, if given, wins at start. Logs [Stereo].
     public class ScreenBrightness : MonoBehaviour
     {
         const int k_DefaultPercent = 90;
         const string k_SavedKey = "UsersBrightness";
+        const string k_LevelKey = "AppBrightness";
+        // Never darker than this from the Controls, so the screen can't go black in the viewer.
+        public const float k_MinLevel = 0.1f;
+
+        // The one running on a phone; null in the editor or with the launch option at 0.
+        public static ScreenBrightness Instance { get; private set; }
+
+        // The app's brightness, 0 to 1: set from the settings panel, and kept for next time.
+        public float Level
+        {
+            get => m_Level;
+            set
+            {
+                m_Level = Mathf.Clamp(value, k_MinLevel, 1f);
+                PlayerPrefs.SetFloat(k_LevelKey, m_Level);
+                PlayerPrefs.Save();
+                if (m_UsersLevel >= 0f)
+                    Screen.brightness = m_Level;
+                Debug.Log($"[Stereo] Screen brightness set to {m_Level * 100f:F0}%");
+            }
+        }
 
         float m_Level;
         float m_UsersLevel = -1f;
@@ -26,12 +49,15 @@ namespace CardboardXR.Stereo
         {
             if (!Application.isMobilePlatform)
                 return;
-            var percent = LaunchOptions.GetInt("brightness", k_DefaultPercent);
-            if (percent <= 0)
+            var percent = LaunchOptions.GetInt("brightness", -1);
+            if (percent == 0)
                 return;
+            // The launch option, else what the Controls last set, else the default.
+            var level = percent > 0 ? Mathf.Clamp01(percent / 100f) : PlayerPrefs.GetFloat(k_LevelKey, k_DefaultPercent / 100f);
             var holder = new GameObject("Screen Brightness");
             DontDestroyOnLoad(holder);
-            holder.AddComponent<ScreenBrightness>().m_Level = Mathf.Clamp01(percent / 100f);
+            Instance = holder.AddComponent<ScreenBrightness>();
+            Instance.m_Level = Mathf.Clamp(level, k_MinLevel, 1f);
         }
 
         void Start()

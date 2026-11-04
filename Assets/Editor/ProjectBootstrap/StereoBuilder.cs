@@ -179,8 +179,12 @@ namespace ProjectBootstrap
             if (catalog == null)
                 return new[] { CoreScene };
             var scenes = new System.Collections.Generic.List<string> { CoreScene, catalog.LobbyScenePath };
+            // Two entries can share a scene (YouTube and Browser are both the Apps scene).
             foreach (var demo in catalog.Demos)
-                scenes.Add(demo.ScenePath);
+            {
+                if (!scenes.Contains(demo.ScenePath))
+                    scenes.Add(demo.ScenePath);
+            }
             return scenes.ToArray();
         }
 
@@ -790,7 +794,7 @@ namespace ProjectBootstrap
         // Recenter and Scan Room (6DoF only); and the toggles, 6DoF and Passthrough, shown selected
         // while on. (Pinching is always on: see PinchInput.) M3Toolbar lays out only the items
         // showing. Scan Room is added once the room boundary exists, then ArrangeToolbar finishes it.
-        // Returns the items (Apps, Recenter, 6DoF, Passthrough, one empty for Scan Room, Arrange) and the panel.
+        // Returns the items (Apps, Recenter, 6DoF, Passthrough, one empty for Scan Room, Arrange, Controls) and the panel.
         static (M3Button[] items, RectTransform panel) BuildToolbar(HeadPoseFusion fusion,
             PassthroughController passthrough, DemoManager demos)
         {
@@ -805,7 +809,7 @@ namespace ProjectBootstrap
 
             // The view switch isn't here: it's on the screen itself, in the settings menu, since it's
             // pressed with the phone in hand where this panel can't be reached.
-            var items = new M3Button[6];
+            var items = new M3Button[7];
             // Apps shows the app library above the panel (BuildLibrary), the way to the lobby and
             // between demos.
             var library = demos.gameObject.AddComponent<AppLibrary>();
@@ -819,6 +823,13 @@ namespace ProjectBootstrap
             serializedArranger.FindProperty("m_Head").objectReferenceValue = fusion.transform;
             serializedArranger.ApplyModifiedPropertiesWithoutUndo();
             items[5] = ToolbarItem(panel, "Arrange", "view_agenda", "Arrange", arranger.Arrange);
+            // Controls shows volume and brightness under the panel (QuickControls).
+            var controls = demos.gameObject.AddComponent<QuickControls>();
+            items[6] = ToolbarItem(panel, "Controls", "tune", "Controls", controls.Toggle);
+            var serializedControls = new SerializedObject(controls);
+            serializedControls.FindProperty("m_Panel").objectReferenceValue = panel;
+            serializedControls.FindProperty("m_Button").objectReferenceValue = items[6];
+            serializedControls.ApplyModifiedPropertiesWithoutUndo();
             return (items, panel);
         }
 
@@ -892,9 +903,9 @@ namespace ProjectBootstrap
         // Orders the items into their groups, with a divider before each group after the first.
         static void ArrangeToolbar(RectTransform panel, M3Button[] items)
         {
-            // Apps | Recenter, Arrange, Scan Room | 6DoF, Passthrough.
-            var order = new[] { items[0], items[1], items[5], items[4], items[2], items[3] };
-            var groups = new[] { 0, 1, 1, 1, 2, 2 };
+            // Apps, Controls | Recenter, Arrange, Scan Room | 6DoF, Passthrough.
+            var order = new[] { items[0], items[6], items[1], items[5], items[4], items[2], items[3] };
+            var groups = new[] { 0, 0, 1, 1, 1, 2, 2 };
             var dividers = new Image[3];
             for (var g = 1; g < dividers.Length; g++)
             {

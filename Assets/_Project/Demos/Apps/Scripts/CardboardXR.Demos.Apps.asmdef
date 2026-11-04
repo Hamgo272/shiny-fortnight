@@ -8,7 +8,8 @@
         "CardboardXR.Interaction",
         "UnityEngine.UI",
         "CardboardXR.UI",
-        "Unity.TextMeshPro"
+        "Unity.TextMeshPro",
+        "CardboardXR.Demos.Portal"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

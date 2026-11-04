@@ -4,6 +4,7 @@ using CardboardXR.UI;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using CardboardXR.Demos.Portal;
 
 namespace CardboardXR.Demos.Apps
 {
@@ -26,14 +27,25 @@ namespace CardboardXR.Demos.Apps
     // hand's position drives drags and resizes. It was 3DoF with hands off, to save heat for the app's
     // own video decoding, but turning on passthrough from the settings panel then left no pinch
     // source (see PinchInput). In 3DoF a pinch has no position, so it can only tap. Logs [Apps].
+    // The same demo is the Browser: its catalog entry ("browser") points at this scene, and the window
+    // then opens a browser (Chrome, or Samsung Internet if there's no Chrome) instead of YouTube, with
+    // a Type button on the panel for the keyboard (WindowKeyboard) and Home going to k_BrowserHome.
     public class AppWindowDemo : Demo, IPinchHandler
     {
-        const string k_App = "com.google.android.youtube";
+        const string k_YouTube = "com.google.android.youtube";
+        // Tried in order: the first one installed opens (WindowService.launch).
+        const string k_Browsers = "com.android.chrome,com.sec.android.app.sbrowser";
+        const string k_BrowserHome = "https://www.google.com";
+        public const string BrowserId = "browser";
         const int k_Width = 1280;
         const int k_Height = 720;
         const int k_Dpi = 200;
         const int k_KeyBack = 4;
-        const int k_SwipeMilliseconds = 250;
+        const int k_KeyEnter = 66;
+        // The keyboard sits below the eyes, above where the panel was, clear of most of the window.
+        const float k_KeyboardPitch = -24f;
+        // Up and Down: this many mouse-wheel notches, about a third of a page in Chrome or YouTube.
+        const int k_ScrollNotches = 5;
 
         const float k_WindowWidth = 2.4f;
         const float k_MinWidth = 0.8f;
@@ -53,20 +65,80 @@ namespace CardboardXR.Demos.Apps
         // window is up the app aims for 60 fps, put back on leaving. (Hand tracking held to 15 Hz made
         // the pinch point jumpy, and taps became drags; it runs at its usual rate.)
         const int k_FrameRate = 60;
-        static readonly Vector2 k_PanelSize = new(700f, 112f);
+        const float k_PanelHeight = 112f;
+        // The panel's width in dp: as wide as its buttons need (BuildPanel).
+        float m_PanelWidth = 700f;
+        // The Moon cinema: the Moon instead of the room, in 3DoF with the camera, ARCore and hand
+        // tracking off, which runs much cooler while the app plays video. The Moon's ground sits this
+        // far below the eyes.
+        const float k_MoonEyeHeight = 1.5f;
+        bool m_OnMoon;
+        GameObject m_MoonRoot;
+        M3Button m_MoonButton;
         static readonly Vector2 k_CornerSize = new(64f, 64f);
 
         [Tooltip("An unlit material for the app's picture. Copied at runtime.")]
         [SerializeField] Material m_Material;
+        [Tooltip("The Moon's assets, for the Moon cinema (MoonWorld, Lite). None hides the Moon button.")]
+        [SerializeField] MoonAssets m_MoonAssets;
 
         enum Gesture
         {
             None,
             Resize,
+            Grab,
         }
+
+        // The fist grab, as Android XR's: look at the window and close your hand into a fist, and the
+        // window follows the hand round you at its distance (the hand's movement scaled up by
+        // k_GrabReach); open the hand to let it go. Needs hand tracking (6DoF), so not in the Moon
+        // cinema. A finger is curled when its tip is nearer the palm's middle than k_CurledRatio palm
+        // lengths, straight beyond k_StraightRatio; each shape must hold k_HandShapeSeconds. A fist
+        // closing passes through a pinch, and the pinch's release comes when the hand opens: taps on
+        // the window are ignored while grabbed and k_ScrollTapGuard after (the parked version held
+        // every tap back 150 ms instead, which changed how taps felt).
+        const float k_CurledRatio = 0.8f;
+        const float k_StraightRatio = 1.05f;
+        const float k_HandShapeSeconds = 0.08f;
+        const float k_GrabReach = 3f;
+        readonly float[] m_Ratios = new float[4];
+        float m_FistFor;
+        float m_OpenFor;
+        float m_LostSince = -1f;
+        Vector3 m_GrabHand;
+        Vector3 m_GrabWindow;
+        Vector3 m_GrabPanel;
 
         CoreServices m_Core;
         readonly AppWindowBridge m_Bridge = new();
+        string m_App = k_YouTube;
+        bool m_IsBrowser;
+        WindowKeyboard m_Keyboard;
+        readonly TwoFingerScroll m_TwoFingers = new();
+        // Two-finger notches are sent at most this often, in seconds, summed meanwhile: a browser
+        // animates each wheel notch, and one a frame made it stutter and fight itself.
+        const float k_ScrollSendSeconds = 0.12f;
+        int m_PendingNotches;
+        // Taps on the window are ignored while the two-finger pose is held and this long after, in
+        // seconds: going into or out of it, the thumb can brush the index finger, which is a pinch.
+        const float k_ScrollTapGuard = 0.5f;
+        float m_TwoFingersAt = float.NegativeInfinity;
+        Vector2Int m_PendingScrollAt;
+        float m_NextScrollSend;
+        // Feedback the moment a tap registers, before the app answers: a ring spreading from the
+        // tapped point (k_RippleSeconds), drawn with the reticle's shader.
+        const float k_RippleSeconds = 0.35f;
+        const float k_RippleMeters = 0.12f;
+        Transform m_Ripple;
+        Material m_RippleMaterial;
+        float m_RippleAt = float.NegativeInfinity;
+        static readonly int k_RippleInner = Shader.PropertyToID("_Inner");
+        static readonly int k_RippleOuter = Shader.PropertyToID("_Outer");
+        static readonly int k_RippleColor = Shader.PropertyToID("_Color");
+        // The window's frame: lit while it's being scrolled, moved or resized, faint while the
+        // two-finger pose is held and about to scroll.
+        static readonly Color k_EdgeActive = new(0.55f, 0.8f, 1f);
+        static readonly Color k_EdgeReady = new(0.3f, 0.42f, 0.55f);
         Transform m_Window;
         Transform m_Edge;
         readonly Transform[] m_Handles = new Transform[4];
@@ -97,6 +169,9 @@ namespace CardboardXR.Demos.Apps
         public override void OnDemoEnter(CoreServices core)
         {
             m_Core = core;
+            m_IsBrowser = core.Demos.Current != null && core.Demos.Current.Id == BrowserId;
+            m_App = m_IsBrowser ? k_Browsers : k_YouTube;
+            Debug.Log($"[Apps] Opening {(m_IsBrowser ? "the browser" : "YouTube")}");
             // No cubes: a pinch that misses the window and lands on the floor would place one, as in
             // the lobby (demos get cubes unless they choose otherwise, see DemoManager).
             core.Placer.ObjectPrefab = null;
@@ -112,13 +187,13 @@ namespace CardboardXR.Demos.Apps
                 m_Window.SetPositionAndRotation(pose.position, pose.rotation);
                 PlaceCorners();
             }, false, k_WindowDistance);
-            m_PanelEntry = FloatingWindows.Register("Window Panel", m_Panel, M3Theme.DpToMeters(k_PanelSize.x, k_PanelDistance), true,
+            m_PanelEntry = FloatingWindows.Register("Window Panel", m_Panel, M3Theme.DpToMeters(m_PanelWidth, k_PanelDistance), true,
                 k_PanelDistance);
             PinchRouter.Handler = this;
             m_SavedFrameRate = Application.targetFrameRate;
             Application.targetFrameRate = k_FrameRate;
             Debug.Log($"[Apps] To keep cool: {k_FrameRate} fps");
-            m_Bridge.Start(k_Width, k_Height, k_Dpi, k_App);
+            m_Bridge.Start(k_Width, k_Height, k_Dpi, m_App);
         }
 
         public override void OnDemoExit(CoreServices core)
@@ -131,6 +206,7 @@ namespace CardboardXR.Demos.Apps
             Destroy(m_WindowMaterial);
             Destroy(m_EdgeMaterial);
             Destroy(m_HandleMaterial);
+            Destroy(m_RippleMaterial);
         }
 
         void Update()
@@ -157,7 +233,10 @@ namespace CardboardXR.Demos.Apps
             if (m_Moving)
                 PlaceWhereLooking();
             FollowPinch();
+            FollowTwoFingers();
+            FollowFist();
             ShowEdge();
+            ShowRipple();
         }
 
         // How many frames came in, and how bright the picture is: 0 means they're arriving but black.
@@ -246,15 +325,102 @@ namespace CardboardXR.Demos.Apps
 
         void BuildPanel()
         {
-            m_Panel = WorldUi.Panel("Window Panel", transform, k_PanelSize, k_PanelDistance);
-            m_Status = M3.Text("Status", m_Panel, "", M3Theme.Type.BodyMedium, new Vector2(0f, 34f), new Vector2(580f, 24f),
+            // Six buttons, plus the browser's Type and the Moon cinema's Moon/Room: 104 dp each for six,
+            // 90 for more, the panel as wide as they need.
+            var moon = m_MoonAssets != null;
+            var count = 6 + (m_IsBrowser ? 1 : 0) + (moon ? 1 : 0);
+            var width = count > 6 ? 90f : 104f;
+            var step = width + 12f;
+            m_PanelWidth = Mathf.Max(700f, count * step + 24f);
+            m_Panel = WorldUi.Panel("Window Panel", transform, new Vector2(m_PanelWidth, k_PanelHeight), k_PanelDistance);
+            m_Status = M3.Text("Status", m_Panel, "", M3Theme.Type.BodyMedium, new Vector2(0f, 34f), new Vector2(m_PanelWidth - 120f, 24f),
                 M3Theme.OnSurfaceVariant);
-            M3.Button("Back", m_Panel, "Back", M3Button.Variant.Tonal, new Vector2(-290f, -20f), () => m_Bridge.Key(k_KeyBack), width: 104f);
-            M3.Button("Home", m_Panel, "Home", M3Button.Variant.Tonal, new Vector2(-174f, -20f), () => m_Bridge.Launch(k_App), width: 104f);
-            M3.Button("Scroll Up", m_Panel, "Up", M3Button.Variant.Tonal, new Vector2(-58f, -20f), () => Scroll(1), width: 104f);
-            M3.Button("Scroll Down", m_Panel, "Down", M3Button.Variant.Tonal, new Vector2(58f, -20f), () => Scroll(-1), width: 104f);
-            M3.Button("Center", m_Panel, "Center", M3Button.Variant.Tonal, new Vector2(174f, -20f), PlaceWindow, width: 104f);
-            M3.Button("Leave", m_Panel, "Leave", M3Button.Variant.Text, new Vector2(290f, -20f), () => m_Core.Demos.ExitToLobby(), width: 104f);
+            var slot = 0;
+            Vector2 Next() => new((slot++ - (count - 1) / 2f) * step, -20f);
+            M3.Button("Back", m_Panel, "Back", M3Button.Variant.Tonal, Next(), () => m_Bridge.Key(k_KeyBack), width: width);
+            M3.Button("Home", m_Panel, "Home", M3Button.Variant.Tonal, Next(), GoHome, width: width);
+            if (m_IsBrowser)
+                M3.Button("Type", m_Panel, "Type", M3Button.Variant.Tonal, Next(), ShowKeyboard, width: width);
+            M3.Button("Scroll Up", m_Panel, "Up", M3Button.Variant.Tonal, Next(), () => Scroll(1), width: width);
+            M3.Button("Scroll Down", m_Panel, "Down", M3Button.Variant.Tonal, Next(), () => Scroll(-1), width: width);
+            M3.Button("Center", m_Panel, "Center", M3Button.Variant.Tonal, Next(), PlaceWindow, width: width);
+            if (moon)
+                m_MoonButton = M3.Button("Moon", m_Panel, "Moon", M3Button.Variant.Tonal, Next(), () => SetMoon(!m_OnMoon), width: width);
+            M3.Button("Leave", m_Panel, "Leave", M3Button.Variant.Text, Next(), () => m_Core.Demos.ExitToLobby(), width: width);
+            if (m_IsBrowser)
+            {
+                m_Keyboard = WindowKeyboard.Build(transform, k_PanelDistance);
+                m_Keyboard.Go += url => m_Bridge.OpenUrl(url);
+                m_Keyboard.Type += text =>
+                {
+                    m_Bridge.Text(text);
+                    m_Bridge.Key(k_KeyEnter);
+                };
+                m_Keyboard.Closed += () => m_Panel.gameObject.SetActive(true);
+            }
+        }
+
+        // The Moon cinema on or off. On: 3DoF with the camera, ARCore and hands off (so it runs much
+        // cooler), and the Moon built around you, the window put back in front once the new head pose
+        // has settled. Off: back to the room in 6DoF passthrough with hands, as the demo starts.
+        // Leaving the demo puts back what was on before it (DemoManager), so nothing to undo there.
+        void SetMoon(bool on)
+        {
+            if (on == m_OnMoon || m_MoonAssets == null)
+                return;
+            m_OnMoon = on;
+            m_MoonButton.Text = on ? "Room" : "Moon";
+            if (on)
+            {
+                m_Core.Apply(new CoreState(false, false, false));
+                m_MoonRoot = new GameObject("Moon Cinema");
+                m_MoonRoot.transform.SetParent(transform, false);
+                var moon = m_MoonRoot.AddComponent<MoonWorld>();
+                moon.Lite = true;
+                moon.Build(m_MoonAssets, m_MoonRoot.transform, m_MoonRoot.transform);
+            }
+            else
+            {
+                Destroy(m_MoonRoot);
+                m_MoonRoot = null;
+                m_Core.Apply(new CoreState(true, true, true));
+            }
+            Debug.Log($"[Apps] Moon cinema {(on ? "on: 3DoF, camera and hands off" : "off: back to the room")}");
+            StartCoroutine(SettleAfterSwitch());
+        }
+
+        // The head's pose jumps when tracking switches between 3DoF and 6DoF: a few frames later, the
+        // Moon goes under the eyes, facing where they look, and the window and panel in front.
+        System.Collections.IEnumerator SettleAfterSwitch()
+        {
+            for (var i = 0; i < 5; i++)
+                yield return null;
+            if (m_MoonRoot != null)
+            {
+                var head = m_Core.Head;
+                var flat = Vector3.ProjectOnPlane(head.forward, Vector3.up);
+                var yaw = flat.sqrMagnitude > 1e-4f ? Quaternion.LookRotation(flat.normalized) : Quaternion.identity;
+                m_MoonRoot.transform.SetPositionAndRotation(head.position - Vector3.up * k_MoonEyeHeight, yaw);
+            }
+            PlaceWindow();
+        }
+
+        // The app's start: YouTube's home, or the browser's home page.
+        void GoHome()
+        {
+            if (m_IsBrowser)
+                m_Bridge.OpenUrl(k_BrowserHome);
+            else
+                m_Bridge.Launch(m_App);
+        }
+
+        // The keyboard takes the panel's place, a little higher, until it's closed or used.
+        void ShowKeyboard()
+        {
+            if (m_Keyboard == null)
+                return;
+            m_Panel.gameObject.SetActive(false);
+            m_Keyboard.Show(m_Core.Head, k_PanelDistance, k_KeyboardPitch);
         }
 
         // Move and Close, each a round button on its own small panel, on the window's top corners.
@@ -358,8 +524,143 @@ namespace CardboardXR.Demos.Apps
         // Moves by half the window's height: direction +1 shows what's above, -1 what's below.
         void Scroll(int direction)
         {
-            var distance = k_Height / 4 * direction;
-            m_Bridge.Swipe(k_Width / 2, k_Height / 2 - distance, k_Width / 2, k_Height / 2 + distance, k_SwipeMilliseconds);
+            // A mouse wheel, not a swipe: a swipe touched the display, which took focus from Unity and
+            // froze the stereo view (passthrough stalled, then black) for about a second.
+            m_Bridge.Scroll(k_Width / 2, k_Height / 2, k_ScrollNotches * direction, k_Height / 4 * direction);
+        }
+
+        // The app on the window can take the phone's focus (opening a link, a new screen), and Unity
+        // stops drawing without it. Asked back only then: giving it back after every tap restarted
+        // Unity's activity each time, and ARCore lost tracking and recentred the room.
+        void OnApplicationFocus(bool focused)
+        {
+            if (focused || m_State != AppWindowState.Running)
+                return;
+            Debug.Log("[Apps] Lost the phone's focus to the window's app; taking it back");
+            m_Bridge.Focus();
+        }
+
+        void OnApplicationPause(bool paused) => m_Bridge.Paused(paused);
+
+        // Two fingers out, palm away, moved up or down with the gaze on the window: scrolls it there
+        // (TwoFingerScroll), as wheel notches.
+        void FollowTwoFingers()
+        {
+            var tracker = m_Core.HandTracker;
+            var seen = tracker != null && tracker.isActiveAndEnabled && tracker.IsTracking && m_Gesture == Gesture.None && !m_Moving;
+            var landmarks = seen ? tracker.ImageLandmarks : null;
+            var pose = false;
+            var local = Vector3.zero;
+            if (landmarks != null && landmarks.Count >= 21 && GazeOnWindow(out local))
+            {
+                var facing = PalmGesture.Facing(landmarks[PalmGesture.k_Wrist], landmarks[PalmGesture.k_IndexKnuckle],
+                    landmarks[PalmGesture.k_PinkyKnuckle], tracker.HandednessScore >= 0.5f);
+                pose = TwoFingerScroll.IsPose(tracker.Joints, facing);
+            }
+            var height = seen ? tracker.Joints[9].y : 0f;
+            var notches = m_TwoFingers.Update(pose, height, Time.unscaledDeltaTime);
+            if (m_TwoFingers.IsScrolling || m_TwoFingers.IsArming)
+                m_TwoFingersAt = Time.unscaledTime;
+            if (notches != 0)
+            {
+                m_PendingNotches += notches;
+                m_PendingScrollAt = PixelAt(local, k_Width, k_Height);
+            }
+            if (m_PendingNotches == 0 || Time.unscaledTime < m_NextScrollSend)
+                return;
+            m_NextScrollSend = Time.unscaledTime + k_ScrollSendSeconds;
+            m_Bridge.Scroll(m_PendingScrollAt.x, m_PendingScrollAt.y, m_PendingNotches, m_PendingNotches * 40);
+            m_PendingNotches = 0;
+        }
+
+        // How curled each finger is: tip to the palm's middle, in palm lengths, for the index, middle,
+        // ring and little fingers. False if the hand isn't tracked.
+        bool FingerRatios(float[] ratios)
+        {
+            var tracker = m_Core.HandTracker;
+            if (tracker == null || !tracker.isActiveAndEnabled || !tracker.IsTracking)
+                return false;
+            var j = tracker.Joints;
+            var palm = (j[0] + j[5] + j[9] + j[13] + j[17]) / 5f;
+            var length = Vector3.Distance(j[0], j[9]);
+            if (length < 1e-3f)
+                return false;
+            ratios[0] = Vector3.Distance(j[8], palm) / length;
+            ratios[1] = Vector3.Distance(j[12], palm) / length;
+            ratios[2] = Vector3.Distance(j[16], palm) / length;
+            ratios[3] = Vector3.Distance(j[20], palm) / length;
+            return true;
+        }
+
+        void FollowFist()
+        {
+            if (m_Moving || m_Gesture == Gesture.Resize || m_TwoFingers.IsScrolling)
+                return;
+            var tracked = FingerRatios(m_Ratios);
+            var curled = 0;
+            var straight = 0;
+            if (tracked)
+            {
+                m_LostSince = -1f;
+                foreach (var ratio in m_Ratios)
+                {
+                    if (ratio < k_CurledRatio)
+                        curled++;
+                    if (ratio > k_StraightRatio)
+                        straight++;
+                }
+            }
+            var fist = tracked && curled == 4;
+            var open = tracked && straight >= 3;
+            var dt = Time.unscaledDeltaTime;
+            m_FistFor = fist ? m_FistFor + dt : 0f;
+            m_OpenFor = open ? m_OpenFor + dt : 0f;
+            var hand = tracked ? (m_Core.HandTracker.Joints[0] + m_Core.HandTracker.Joints[9]) / 2f : Vector3.zero;
+
+            if (m_Gesture != Gesture.Grab)
+            {
+                if (m_FistFor < k_HandShapeSeconds || !GazeOnWindow(out _))
+                    return;
+                m_Gesture = Gesture.Grab;
+                m_GrabHand = hand;
+                m_GrabWindow = m_Window.position;
+                m_GrabPanel = m_Panel.position;
+                m_TwoFingersAt = Time.unscaledTime;
+                Debug.Log($"[Apps] Grabbed the window (fingers {m_Ratios[0]:F2} {m_Ratios[1]:F2} {m_Ratios[2]:F2} {m_Ratios[3]:F2} palm lengths)");
+                return;
+            }
+
+            // Grabbed: taps stay ignored until a moment after it's let go.
+            m_TwoFingersAt = Time.unscaledTime;
+            if (open && m_OpenFor >= k_HandShapeSeconds || !tracked && LostTooLong())
+            {
+                m_Gesture = Gesture.None;
+                m_LostSince = -1f;
+                Debug.Log(tracked ? "[Apps] Let go of the window" : "[Apps] Lost the hand: the window stays there");
+                return;
+            }
+            if (!tracked)
+                return;
+            // The window follows the hand's movement, scaled up, kept at its distance from the head,
+            // upright and facing it; the panel moves with it.
+            var head = m_Core.Head.position;
+            var target = m_GrabWindow + (hand - m_GrabHand) * k_GrabReach;
+            var distance = Vector3.Distance(head, m_GrabWindow);
+            var position = head + (target - head).normalized * distance;
+            var facing = Vector3.ProjectOnPlane(position - head, Vector3.up);
+            var rotation = facing.sqrMagnitude > 1e-4f ? Quaternion.LookRotation(facing.normalized) : m_Window.rotation;
+            m_Window.SetPositionAndRotation(position, rotation);
+            m_Panel.position = m_GrabPanel + (position - m_GrabWindow);
+            m_Panel.rotation = Quaternion.LookRotation(m_Panel.position - head, Vector3.up);
+            PlaceCorners();
+        }
+
+        // True once the hand has been out of view half a second while grabbing.
+        bool LostTooLong()
+        {
+            if (m_LostSince < 0f)
+                m_LostSince = Time.unscaledTime;
+            return Time.unscaledTime - m_LostSince > 0.5f;
         }
 
         // Where the gaze meets the window, in its local space (-0.5 to 0.5 across and up), if it does.
@@ -396,9 +697,15 @@ namespace CardboardXR.Demos.Apps
         {
             var edge = m_Gesture == Gesture.Resize ? m_ResizeSide
                 : m_Gesture == Gesture.None && GazeOnWindow(out var local) ? EdgeAt(local) : Vector2.zero;
-            // The frame round the window stays off: only the handles show a resize is coming.
-            if (m_Edge.gameObject.activeSelf)
-                m_Edge.gameObject.SetActive(false);
+            // The frame round the window lights while something is happening to the window as a whole
+            // (scrolling, moving, resizing), dimly while the scroll pose is about to start, and is
+            // otherwise off: lit by the gaze alone it looked like a resize was coming.
+            var active = m_TwoFingers.IsScrolling || m_Moving || m_Gesture == Gesture.Resize || m_Gesture == Gesture.Grab;
+            var ready = !active && m_TwoFingers.IsArming;
+            if (m_Edge.gameObject.activeSelf != (active || ready))
+                m_Edge.gameObject.SetActive(active || ready);
+            if (active || ready)
+                m_EdgeMaterial.color = active ? k_EdgeActive : k_EdgeReady;
             // The handles light up on their corner.
             var corner = edge.y < 0f && edge.x != 0f;
             m_HandleMaterial.color = corner ? new Color(0.55f, 0.8f, 1f) : new Color(0.75f, 0.78f, 0.82f);
@@ -413,6 +720,9 @@ namespace CardboardXR.Demos.Apps
                 FinishMove();
                 return true;
             }
+            // A fist holding the window reads as a pinch too: it's still the grab.
+            if (m_Gesture == Gesture.Grab)
+                return true;
             // Only a resize handle: everything on the window is the ordinary gaze click, a tap.
             if (source != PinchSource.Hand || !GazeOnWindow(out var local))
                 return false;
@@ -434,6 +744,8 @@ namespace CardboardXR.Demos.Apps
 
         public void EndPinch()
         {
+            if (m_Gesture == Gesture.Grab)
+                return;
             if (m_Gesture == Gesture.Resize)
                 Debug.Log($"[Apps] Window resized to {m_Width:F2} m wide");
             m_Gesture = Gesture.None;
@@ -484,9 +796,57 @@ namespace CardboardXR.Demos.Apps
         {
             if (!GazeOnWindow(out var local))
                 return;
+            if (Time.unscaledTime - m_TwoFingersAt < k_ScrollTapGuard)
+            {
+                Debug.Log("[Apps] Tap ignored: it came with the two-finger scroll or a grab");
+                return;
+            }
             var pixel = PixelAt(local, k_Width, k_Height);
+            StartRipple(local);
             Debug.Log($"[Apps] Tap at {pixel.x}, {pixel.y}");
             m_Bridge.Tap(pixel.x, pixel.y);
+        }
+
+        void StartRipple(Vector3 local)
+        {
+            if (m_Ripple == null)
+            {
+                var shader = Shader.Find("CardboardXR/Reticle");
+                if (shader == null)
+                    return;
+                m_RippleMaterial = new Material(shader) { name = "Tap Ripple" };
+                m_RippleMaterial.SetFloat("_Outline", 0f);
+                var ripple = GameObject.CreatePrimitive(PrimitiveType.Quad);
+                ripple.name = "Tap Ripple";
+                Destroy(ripple.GetComponent<Collider>());
+                ripple.transform.SetParent(transform, false);
+                ripple.GetComponent<MeshRenderer>().sharedMaterial = m_RippleMaterial;
+                m_Ripple = ripple.transform;
+            }
+            // Just in front of the window, at the tapped point, at a fixed size whatever the window's.
+            var point = m_Window.TransformPoint(new Vector3(local.x, local.y, 0f)) - m_Window.forward * 0.01f;
+            m_Ripple.SetPositionAndRotation(point, m_Window.rotation);
+            m_Ripple.localScale = new Vector3(k_RippleMeters, k_RippleMeters, 1f);
+            m_RippleAt = Time.unscaledTime;
+            m_Ripple.gameObject.SetActive(true);
+        }
+
+        void ShowRipple()
+        {
+            if (m_Ripple == null || !m_Ripple.gameObject.activeSelf)
+                return;
+            var t = (Time.unscaledTime - m_RippleAt) / k_RippleSeconds;
+            if (t >= 1f)
+            {
+                m_Ripple.gameObject.SetActive(false);
+                return;
+            }
+            // A ring that widens and thins as it fades.
+            var eased = 1f - (1f - t) * (1f - t);
+            var outer = Mathf.Lerp(0.25f, 1f, eased);
+            m_RippleMaterial.SetFloat(k_RippleOuter, outer);
+            m_RippleMaterial.SetFloat(k_RippleInner, outer * Mathf.Lerp(0.55f, 0.85f, eased));
+            m_RippleMaterial.SetColor(k_RippleColor, new Color(1f, 1f, 1f, 0.85f * (1f - t)));
         }
 
         // The pixel, from the top left, at a point in a unit quad's local space, which runs -0.5 to 0.5.

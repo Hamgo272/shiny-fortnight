@@ -7,6 +7,9 @@ namespace CardboardXR.Interaction
     // size is set in degrees, so it looks the same at any distance. The sizes and growth speed follow
     // the Google VR SDK's GvrReticlePointer. Put it on a unit quad using the CardboardXR/Reticle
     // shader, as a child of the GazePointer.
+    //   Feedback the moment a press registers, before whatever it presses answers (an app on a window
+    //   can take a few hundred milliseconds): while held, the reticle draws in to k_PressScale and
+    //   turns solid; on release it springs back with a quick ring out past it (k_PingSeconds).
     [RequireComponent(typeof(MeshRenderer))]
     public class GazeReticle : MonoBehaviour
     {
@@ -34,6 +37,20 @@ namespace CardboardXR.Interaction
         bool m_Interactive;
         // 0 is the dot, 1 the full ring.
         float m_Growth;
+        const float k_PressScale = 0.6f;
+        const float k_PingSeconds = 0.22f;
+        const float k_PingDegrees = 1.6f;
+        bool m_Held;
+        float m_Press;
+        float m_PingAt = float.NegativeInfinity;
+
+        // From GazePointer: a press began (true) or ended (false).
+        public void Press(bool held)
+        {
+            if (m_Held && !held)
+                m_PingAt = Time.unscaledTime;
+            m_Held = held;
+        }
 
         // Whether a hand is in the camera's view, ready to pinch: the reticle turns light blue, since
         // otherwise nothing says whether a pinch will register.
@@ -55,9 +72,15 @@ namespace CardboardXR.Interaction
         {
             m_Growth = Mathf.Lerp(m_Growth, m_Interactive ? 1f : 0f, Mathf.Clamp01(Time.unscaledDeltaTime * m_GrowthSpeed));
 
-            // Radii per meter of distance.
-            var inner = RadiusForDiameter(m_GrowthDegrees * m_Growth);
-            var outer = RadiusForDiameter(m_DotDegrees + m_GrowthDegrees * m_Growth);
+            // Pressing pulls it in fast; letting go springs it back.
+            m_Press = Mathf.MoveTowards(m_Press, m_Held ? 1f : 0f, Time.unscaledDeltaTime * (m_Held ? 25f : 10f));
+            var ping = Mathf.Clamp01((Time.unscaledTime - m_PingAt) / k_PingSeconds);
+            var pinging = ping < 1f;
+            var scale = Mathf.Lerp(1f, k_PressScale, m_Press);
+            // Radii per meter of distance. The ring fills in as it's pressed.
+            var inner = RadiusForDiameter(m_GrowthDegrees * m_Growth * scale * (1f - m_Press));
+            var outer = RadiusForDiameter((m_DotDegrees + m_GrowthDegrees * m_Growth) * scale +
+                                          (pinging ? k_PingDegrees * Mathf.Sin(ping * Mathf.PI) : 0f));
             var outline = Mathf.Tan(m_OutlineDegrees * Mathf.Deg2Rad);
             var quadRadius = outer + outline;
 
@@ -67,7 +90,9 @@ namespace CardboardXR.Interaction
             m_Block.SetFloat(k_Inner, inner / quadRadius);
             m_Block.SetFloat(k_Outer, outer / quadRadius);
             m_Block.SetFloat(k_Outline, outline / quadRadius);
-            m_Block.SetColor(k_Color, HandSeen ? m_HandColor : m_Color);
+            var color = HandSeen ? m_HandColor : m_Color;
+            color.a = Mathf.Lerp(color.a, 1f, m_Press);
+            m_Block.SetColor(k_Color, color);
             m_Renderer.SetPropertyBlock(m_Block);
         }
 

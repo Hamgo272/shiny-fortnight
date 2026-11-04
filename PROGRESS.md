@@ -39,6 +39,80 @@ One UI 6.1) with Shizuku.
   The Apps window (with its button bar), its panel and the Portal panel register themselves.
   Other demos' panels can join with `FloatingWindows.Register(...)`.
 
+### Browser window, and Controls (volume, brightness)
+
+- **Browser** (library tile, globe icon, catalog id `browser`). The same scene and demo as YouTube
+  (`AppWindowDemo` checks `DemoManager.Current.Id`); it opens Chrome, or Samsung Internet if there's
+  no Chrome (`WindowService.launch` takes a comma-separated list and opens the first installed).
+  Home opens google.com. The panel gets a **Type** button for `WindowKeyboard`: an in-world keyboard
+  that collects what's typed, then **Go** opens it as an address (or a Google search, see
+  `WindowKeyboard.ToUrl`) through a VIEW intent on the window's display, and **Type** sends it to the
+  field focused on the page (`input text`, then Enter). Android's own keyboard is turned off for the
+  window's display (see below), since it would come up on the phone's screen, over the stereo view.
+- **Controls** (settings toolbar, next to Apps, `tune` icon): a card under the panel with media volume
+  (Android's music stream, so it sets YouTube's and the browser's too) and screen brightness
+  (`ScreenBrightness.Level`, now kept between runs; the `brightness` launch option still wins).
+  Pinch along a slider to set it there, or use - and +.
+- **Up/Down freeze fix.** On the phone, Up/Down in the browser froze the passthrough, went black for
+  about a second, then came back scrolled. They were 250 ms swipes through `input`, and touching the
+  window's display took focus from Unity, which stops drawing without it. Now they're mouse-wheel
+  events injected straight from the shell service (`InputManagerGlobal.injectInputEvent`, an
+  `ACTION_SCROLL` with `AXIS_VSCROLL` on the window's display), which don't touch the display. The
+  S23 FE's `input` command has no `scroll` (checked). The swipe is kept as a fallback if injecting
+  fails. The display is also made with Android 14's `STEAL_TOP_FOCUS_DISABLED` (old flags if
+  refused), so taps shouldn't take focus either. In the log, look for "Display made with
+  STEAL_TOP_FOCUS_DISABLED" and "Couldn't inject a scroll".
+- **Taps recentred the room (fixed, found in the phone's log).** Every tap on a window was followed
+  0.6-1 s later by "ARCore tracking lost", the session restarting at (0,0,0), then "position jumped
+  10-20 cm; re-anchoring": the passthrough glitched and the view shifted. The cause was
+  `returnFocus()` after every input: `am start` of Unity's activity delivers a new intent, which
+  pauses and resumes it (`APP_CMD_PAUSE`, ARCore `Session::Pause`). With `STEAL_TOP_FOCUS_DISABLED`
+  focus never leaves Unity (the log showed only display 55's own focus changing), so it no longer
+  runs after taps, scrolls, launches or links. If Unity does lose focus (`OnApplicationFocus(false)`)
+  it asks for it back after 300 ms unless it paused meanwhile (the user leaving), with
+  `ActivityTaskManager.setFocusedTask`, which pauses nothing. Taps are injected directly now (press
+  and release), not through the `input` process.
+- Two-finger scroll notches are summed and sent at most every 0.12 s: one per frame made the browser
+  (which animates each notch) stutter. YouTube was fine either way.
+- **Moon cinema** (window panel's Moon / Room button, YouTube and Browser): the Moon instead of
+  the room, built by `MoonWorld` with `Lite` set (sky, Earth, ground and rocks; no sun shadows, a
+  coarser near ground, no soil, dust, boot prints or hand). It switches to 3DoF with passthrough, ARCore
+  and hand tracking off, which runs much cooler with video; pinch taps still work (pinch sensor).
+  Room switches back to 6DoF passthrough with hands. The Moon is put under the eyes facing the gaze,
+  and the window re-centred, a few frames after the switch. The Apps scene gets the Moon's assets on
+  each build (`DemoScenes.EnsureAppsMoon`). Opening YouTube from Portal still leaves the Moon (demos
+  don't overlap): use the Moon button instead.
+- **Fist grab** (from the parked branch, reworked): look at the window and make a fist, and the window
+  follows the hand round you at its distance; open the hand to let go. 6DoF with hands only. The
+  parked version held every tap back 150 ms in case a fist was forming; now taps are instead ignored
+  while grabbed and for 0.5 s after (the pinch a closing fist passes through releases when the hand
+  opens). The same guard ignores taps while the two-finger pose is held: the user saw scrolling also
+  click the page.
+- **Two-finger scroll** (the user's idea): index and middle fingers out, ring and little curled, thumb
+  clear, the back of the hand toward you, with the gaze on the window; move the hand up or down and
+  the window scrolls where you look (`TwoFingerScroll`, 2 cm a wheel notch, the page following the
+  fingers). Holds 0.15 s before starting. It can't be a pinch (thumb away) or the settings gear
+  (palm away). The finger thresholds are guesses from hand proportions: tune them on the phone
+  (the log says "Two-finger scroll started").
+- **Immediate feedback** (a gesture shows on the frame it registers, before the app answers):
+  - the reticle draws in and turns solid while a pinch is held, and pings a ring out on release
+    (`GazeReticle.Press`, everywhere);
+  - a soft 25 ms tick on every gaze press, made in code (`ClickSound`; launch option `clicks 0` mutes it);
+  - a button's pressed wash shows at least 150 ms (`M3StateLayer.k_MinPressSeconds`), so a quick
+    pinch is still seen on it;
+  - a ring spreads from the tapped point on an app window (the app can take a few hundred ms);
+  - the window's frame lights while it's scrolled (two fingers), moved or resized, and faintly while
+    the two-finger pose is held, about to scroll.
+- The on-screen keyboard is turned off for the window's display through
+  `IWindowManager.setDisplayImePolicy(id, HIDE)` by reflection, since this phone's `wm` command has no
+  `set-display-ime-policy` (checked).
+- Found on the phone: the window is a whole Android display. An app on it that opens another (an ad
+  opening Gemini, Gemini opening the browser) opens it there too, replacing the one before. So any
+  app can run in a window, which is what a launcher would build on.
+- Parked, untested: branch `wip-walls-fist-grab` (window on walls, fist grab, ARCore anchoring, an
+  Open apps list). It also delayed every tap by 150 ms, which changes the tap feel; the Apps library
+  already shows what's running, so the Open list isn't needed.
+
 ### Portal: the Moon (second world, now the default)
 
 - `PortalWorld.Kind` picks the world (Moon or Night). The Portal panel has Moon / Night, Suit glove /
@@ -135,6 +209,16 @@ Known limits:
   instead.
 
 ## Future ideas
+
+### Next, in order (asked for 2026-11-04)
+
+1. App launcher on the window: list the phone's apps from the shell service
+   (`cmd package query-activities --brief -a android.intent.action.MAIN -c android.intent.category.LAUNCHER`)
+   with their icons, and open any of them on a window; a recent-apps switcher to go back to one.
+2. Spotify, shown in a custom 3D style (reference image from the user) rather than only its phone UI:
+   check what Spotify's app and Web API allow (now playing, artwork, controls).
+3. A custom look for the icons and UI, distinct from brenpoly's: on hold. The first proposal
+   (dark glass, cyan, Sora/Inter, line icons) wasn't liked; keep the existing Material UI and icons.
 
 ### Live portal into someone else's room (Insta360)
 

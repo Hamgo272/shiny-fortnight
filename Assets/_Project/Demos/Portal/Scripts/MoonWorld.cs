@@ -19,7 +19,11 @@ namespace CardboardXR.Demos.Portal
     //   shadows out to k_ShadowDistance at a higher resolution, put back as they were on leaving.
     // Through the doorway, your hand is the suit glove or your real hand (MoonHand), and you leave boot
     // prints in the soil as you walk. Heights are worked out on a thread so placing the portal
-    // doesn't stall: the portal rises out of the floor meanwhile. Logs [Moon].
+    // doesn't stall: the portal rises out of the floor meanwhile.
+    //   Lite (set before Build) is the Moon as a backdrop, for watching a window on it (the Apps demo's
+    //   Moon cinema): the sky, the Earth, the ground and its rocks, but no sun shadows (the render
+    //   settings are left alone), a coarser near ground, and no soil patch, dust, boot prints or hand,
+    //   so it costs little next to the app's video. Logs [Moon].
     public class MoonWorld : MonoBehaviour
     {
         // The portal's mask box for the Moon: around the whole sky, out to the horizon.
@@ -63,6 +67,9 @@ namespace CardboardXR.Demos.Portal
         bool m_LeftFoot;
         MoonHand.Look m_Look = MoonHand.Look.Glove;
 
+        // A backdrop only: see the class comment. Set before Build.
+        public bool Lite { get; set; }
+
         public MoonHand.Look HandLook
         {
             get => m_Look;
@@ -95,7 +102,8 @@ namespace CardboardXR.Demos.Portal
             var started = Time.realtimeSinceStartup;
             var task = Task.Run(() =>
             {
-                var near = new HeightGrid(-40f, -40f, 80f, 320, (x, z) =>
+                var lite = Lite;
+                var near = new HeightGrid(-40f, -40f, 80f, lite ? 120 : 320, (x, z) =>
                 {
                     var h = MoonTerrain.Height(x, z, 0.3f, out var albedo);
                     return (h - 0.04f * Mathf.Clamp01(Inside(x, z, -1.5f, -0.5f, 3f) / 0.25f), albedo);
@@ -107,6 +115,8 @@ namespace CardboardXR.Demos.Portal
                 });
                 // The patch's edge follows the near grid as drawn there (exactly, along the edge), and
                 // goes over to the full detail, every crater and millimeter relief, within 15 cm.
+                if (lite)
+                    return (near, far, null);
                 var nearRaw = new HeightGrid(-2f, -1f, 4f, 16, (x, z) => (MoonTerrain.Height(x, z, 0.3f), 1f));
                 var patch = new HeightGrid(-1.5f, -0.5f, 3f, 300, (x, z) =>
                 {
@@ -128,6 +138,12 @@ namespace CardboardXR.Demos.Portal
             m_Far = farGrid;
             m_Far.Build("Far Ground", m_Back, m_Front, m_Assets.FarGround, false);
             m_Near.Build("Near Ground", m_Back, m_Front, m_Assets.Ground, true);
+            if (Lite)
+            {
+                BuildRocks();
+                Debug.Log($"[Moon] Backdrop made in {Time.realtimeSinceStartup - started:F1} s");
+                yield break;
+            }
             patchGrid.Build("Soil", m_Back, m_Front, m_Assets.Ground, true);
             m_Soil = new MoonSoil(patchGrid);
             BuildRocks();
@@ -154,7 +170,7 @@ namespace CardboardXR.Demos.Portal
             m_Sun.type = LightType.Directional;
             m_Sun.color = new Color(1f, 0.97f, 0.92f);
             m_Sun.intensity = k_SunIntensity;
-            m_Sun.shadows = LightShadows.Hard;
+            m_Sun.shadows = Lite ? LightShadows.None : LightShadows.Hard;
             m_Sun.shadowStrength = 1f;
             m_Sun.shadowBias = 0.02f;
             m_Sun.shadowNormalBias = 0.3f;
@@ -163,7 +179,7 @@ namespace CardboardXR.Demos.Portal
             m_PreviousSun = RenderSettings.sun;
             RenderSettings.sun = m_Sun;
             m_PreviousCatcher = Shader.GetGlobalFloat(k_ShadowCatcherStrength);
-            if (GraphicsSettings.currentRenderPipeline is UniversalRenderPipelineAsset urp)
+            if (!Lite && GraphicsSettings.currentRenderPipeline is UniversalRenderPipelineAsset urp)
             {
                 m_PreviousShadowDistance = urp.shadowDistance;
                 m_PreviousShadowResolution = urp.mainLightShadowmapResolution;

@@ -12,6 +12,9 @@ namespace CardboardXR.UI
     {
         // Most of the way to a new opacity in this long, in seconds.
         const float k_EaseSeconds = 0.06f;
+        // A pinch can press and let go within a frame or two, too quick to see the pressed wash: it
+        // stays at least this long, in seconds, so every press is seen.
+        public const float k_MinPressSeconds = 0.15f;
 
         [SerializeField] Image m_Layer;
         [SerializeField] Selectable m_Selectable;
@@ -19,6 +22,7 @@ namespace CardboardXR.UI
 
         bool m_Hovered;
         bool m_Pressed;
+        float m_PressedUntil;
         float m_Opacity;
 
         public void Initialize(Image layer, Selectable selectable, Color color)
@@ -42,7 +46,11 @@ namespace CardboardXR.UI
             m_Pressed = false;
         }
 
-        public void OnPointerDown(PointerEventData eventData) => m_Pressed = true;
+        public void OnPointerDown(PointerEventData eventData)
+        {
+            m_Pressed = true;
+            m_PressedUntil = Time.unscaledTime + k_MinPressSeconds;
+        }
 
         public void OnPointerUp(PointerEventData eventData) => m_Pressed = false;
 
@@ -60,7 +68,7 @@ namespace CardboardXR.UI
         void Update()
         {
             var interactable = m_Selectable == null || m_Selectable.IsInteractable();
-            var target = Target(m_Hovered, m_Pressed, interactable);
+            var target = Target(m_Hovered, m_Pressed || Time.unscaledTime < m_PressedUntil, interactable);
             if (Mathf.Approximately(m_Opacity, target))
                 return;
             m_Opacity = Mathf.Lerp(m_Opacity, target, 1f - Mathf.Exp(-Time.unscaledDeltaTime * 3f / k_EaseSeconds));

@@ -181,7 +181,10 @@ namespace ProjectBootstrap
         static void EnsureApps()
         {
             if (AssetDatabase.LoadAssetAtPath<SceneAsset>(AppsScene) != null)
+            {
+                EnsureAppsMoon();
                 return;
+            }
             StereoBuilder.EnsureFolder(AppsFolder);
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
             var material = StereoBuilder.CreateMaterial("App Window", Shader.Find(UnlitShaderName), Color.white, null, 1f, AppsFolder);
@@ -189,10 +192,31 @@ namespace ProjectBootstrap
             var demo = new GameObject("Apps Demo").AddComponent<AppWindowDemo>();
             var serializedDemo = new SerializedObject(demo);
             serializedDemo.FindProperty("m_Material").objectReferenceValue = material;
+            serializedDemo.FindProperty("m_MoonAssets").objectReferenceValue = MoonAssetsBuilder.Ensure();
             serializedDemo.ApplyModifiedPropertiesWithoutUndo();
 
             EditorSceneManager.SaveScene(scene, AppsScene);
             Debug.Log($"[DemoScenes] Made {AppsScene}");
+        }
+
+        // The Moon cinema (AppWindowDemo) needs the Moon's assets: given to a scene made before it, once.
+        static void EnsureAppsMoon()
+        {
+            var assets = MoonAssetsBuilder.Ensure();
+            if (assets == null)
+                return;
+            var scene = EditorSceneManager.OpenScene(AppsScene, OpenSceneMode.Single);
+            var demo = Object.FindFirstObjectByType<AppWindowDemo>();
+            if (demo == null)
+                return;
+            var serialized = new SerializedObject(demo);
+            var property = serialized.FindProperty("m_MoonAssets");
+            if (property.objectReferenceValue == assets)
+                return;
+            property.objectReferenceValue = assets;
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+            EditorSceneManager.SaveScene(scene);
+            Debug.Log($"[DemoScenes] Gave {AppsScene} the Moon's assets");
         }
 
         // The video player: a sphere to draw on, the player and its panel (built at runtime).

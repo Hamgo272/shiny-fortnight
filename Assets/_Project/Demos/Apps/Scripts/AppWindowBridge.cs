@@ -112,6 +112,48 @@ namespace CardboardXR.Demos.Apps
 #endif
         }
 
+        // A mouse wheel's scroll at a pixel, notches up (+) or down (-); a swipe of swipeDistance
+        // pixels where the phone's input command can't scroll.
+        public void Scroll(int x, int y, int notches, int swipeDistance)
+        {
+#if UNITY_ANDROID && !UNITY_EDITOR
+            m_Plugin?.CallStatic("scroll", x, y, notches, swipeDistance);
+#endif
+        }
+
+        // Unity lost the phone's focus to the window's app: takes it back, without restarting Unity's
+        // activity (which would pause ARCore).
+        public void Focus()
+        {
+#if UNITY_ANDROID && !UNITY_EDITOR
+            m_Plugin?.CallStatic("focus");
+#endif
+        }
+
+        public void Paused(bool paused)
+        {
+#if UNITY_ANDROID && !UNITY_EDITOR
+            m_Plugin?.CallStatic("paused", paused);
+#endif
+        }
+
+        // Types text into whatever has focus on the window, such as a page's search box.
+        public void Text(string text)
+        {
+#if UNITY_ANDROID && !UNITY_EDITOR
+            if (!string.IsNullOrEmpty(text))
+                m_Plugin?.CallStatic("text", text);
+#endif
+        }
+
+        // Opens a web address in the window's app (the browser).
+        public void OpenUrl(string url)
+        {
+#if UNITY_ANDROID && !UNITY_EDITOR
+            m_Plugin?.CallStatic("openUrl", url);
+#endif
+        }
+
         // An Android key code, such as KEYCODE_BACK.
         public void Key(int keyCode)
         {
