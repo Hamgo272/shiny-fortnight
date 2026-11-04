@@ -69,12 +69,37 @@ namespace CardboardXR.Stereo
             LogStatus();
         }
 
+        // An anchor at a pose in the room, with nothing placed on it, for something that keeps its own
+        // object, such as the Apps window: done gets the anchor, or null if ARCore couldn't add one
+        // (or isn't running). Remove it with RemoveAnchor.
+        public async void AddAnchor(Pose pose, System.Action<ARAnchor> done)
+        {
+            if (!m_Anchors.enabled || m_Anchors.subsystem == null)
+            {
+                done(null);
+                return;
+            }
+            var result = await m_Anchors.TryAddAnchorAsync(pose);
+            if (this == null)
+                return;
+            done(result.status.IsSuccess() ? result.value : null);
+        }
+
+        public void RemoveAnchor(ARAnchor anchor)
+        {
+            if (anchor != null && m_Anchors != null)
+                m_Anchors.TryRemoveAnchor(anchor);
+        }
+
         // Anchors a new object on the plane at a world point. The anchor isn't attached to the plane:
         // AR Foundation parents a plane-attached anchor to the plane's GameObject, and destroys it
         // with the plane when ARCore merges or drops the plane.
         public async void Place(ARPlane plane, Vector3 point)
         {
             if (m_ObjectPrefab == null || !m_Anchors.enabled || m_Anchors.subsystem == null)
+                return;
+            // Floors, tables and seats only: walls are detected for putting windows on them.
+            if (plane.alignment != UnityEngine.XR.ARSubsystems.PlaneAlignment.HorizontalUp)
                 return;
             if (TryFindNearby(point, out var nearby, out var distance))
             {

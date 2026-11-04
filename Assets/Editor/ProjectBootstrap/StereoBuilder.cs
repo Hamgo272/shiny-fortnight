@@ -388,9 +388,12 @@ namespace ProjectBootstrap
 
             var planes = origin.AddComponent<ARPlaneManager>();
             planes.planePrefab = prefab;
-            // Floors, tables and seats only: walls and other vertical patches cluttered the room and
-            // caught the hand's ray, and an unseen plane blocking it was hard to tell from a miss.
-            planes.requestedDetectionMode = PlaneDetectionMode.Horizontal;
+            // Walls as well as floors, tables and seats, so a window can go on a wall like a cinema
+            // screen (the Apps demo). Walls were left out at first because they cluttered the room and
+            // caught the hand's ray; nothing is placed on them (AnchorPlacer takes only upward-facing
+            // surfaces), and the gaze reaches UI behind any real surface. Detection only runs while
+            // scanning (RoomBoundary), so walls cost nothing the rest of the time.
+            planes.requestedDetectionMode = PlaneDetectionMode.Horizontal | PlaneDetectionMode.Vertical;
             // RoomBoundary turns it on in 6DoF.
             planes.enabled = false;
 
@@ -790,7 +793,7 @@ namespace ProjectBootstrap
         // Recenter and Scan Room (6DoF only); and the toggles, 6DoF and Passthrough, shown selected
         // while on. (Pinching is always on: see PinchInput.) M3Toolbar lays out only the items
         // showing. Scan Room is added once the room boundary exists, then ArrangeToolbar finishes it.
-        // Returns the items (Apps, Recenter, 6DoF, Passthrough, one empty for Scan Room, Arrange) and the panel.
+        // Returns the items (Apps, Recenter, 6DoF, Passthrough, one empty for Scan Room, Arrange, Open) and the panel.
         static (M3Button[] items, RectTransform panel) BuildToolbar(HeadPoseFusion fusion,
             PassthroughController passthrough, DemoManager demos)
         {
@@ -805,7 +808,7 @@ namespace ProjectBootstrap
 
             // The view switch isn't here: it's on the screen itself, in the settings menu, since it's
             // pressed with the phone in hand where this panel can't be reached.
-            var items = new M3Button[6];
+            var items = new M3Button[7];
             // Apps shows the app library above the panel (BuildLibrary), the way to the lobby and
             // between demos.
             var library = demos.gameObject.AddComponent<AppLibrary>();
@@ -819,6 +822,14 @@ namespace ProjectBootstrap
             serializedArranger.FindProperty("m_Head").objectReferenceValue = fusion.transform;
             serializedArranger.ApplyModifiedPropertiesWithoutUndo();
             items[5] = ToolbarItem(panel, "Arrange", "view_agenda", "Arrange", arranger.Arrange);
+            // Open lists what's running, each with an X to close it (OpenApps).
+            var openApps = demos.gameObject.AddComponent<OpenApps>();
+            items[6] = ToolbarItem(panel, "Open Apps", "tab", "Open", openApps.Toggle);
+            var serializedOpen = new SerializedObject(openApps);
+            serializedOpen.FindProperty("m_Demos").objectReferenceValue = demos;
+            serializedOpen.FindProperty("m_Panel").objectReferenceValue = panel;
+            serializedOpen.FindProperty("m_Button").objectReferenceValue = items[6];
+            serializedOpen.ApplyModifiedPropertiesWithoutUndo();
             return (items, panel);
         }
 
@@ -892,9 +903,9 @@ namespace ProjectBootstrap
         // Orders the items into their groups, with a divider before each group after the first.
         static void ArrangeToolbar(RectTransform panel, M3Button[] items)
         {
-            // Apps | Recenter, Arrange, Scan Room | 6DoF, Passthrough.
-            var order = new[] { items[0], items[1], items[5], items[4], items[2], items[3] };
-            var groups = new[] { 0, 1, 1, 1, 2, 2 };
+            // Apps, Open | Recenter, Arrange, Scan Room | 6DoF, Passthrough.
+            var order = new[] { items[0], items[6], items[1], items[5], items[4], items[2], items[3] };
+            var groups = new[] { 0, 0, 1, 1, 1, 2, 2 };
             var dividers = new Image[3];
             for (var g = 1; g < dividers.Length; g++)
             {

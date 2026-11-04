@@ -54,6 +54,8 @@ namespace CardboardXR.UI
             ["apps"] = 0xe5c3,
             // A play button in a rounded rectangle: the Apps demo, which opens YouTube.
             ["smart_display"] = 0xf06a,
+            // A tab: the settings panel's list of open apps.
+            ["tab"] = 0xe8d8,
             ["bolt"] = 0xea0b,
         };
 

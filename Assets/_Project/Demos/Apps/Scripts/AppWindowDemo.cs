@@ -4,6 +4,8 @@ using CardboardXR.UI;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.XR.ARFoundation;
+using UnityEngine.XR.ARSubsystems;
 
 namespace CardboardXR.Demos.Apps
 {
@@ -17,8 +19,19 @@ namespace CardboardXR.Demos.Apps
     // bottom corners, which resizes the window from that corner as in Android XR, the app's picture
     // staying 16:9; and, after Move, the one that puts the window down. The window otherwise stays
     // where it is: only Move, Arrange or a handle shift it.
-    // Two round buttons sit in a small bar above the window: Move (left) makes the window follow the
-    // gaze until a pinch puts it down; Close (right) closes the app and leaves. The panel below
+    // Two round buttons sit in a small bar above the window: Move (left) hides the window, and the
+    // next pinch puts it where the gaze is (following the gaze instead blocked the view); Close
+    // (right) closes the app and leaves. A pinch while looking at a detected wall puts the window on
+    // the wall, as big as the wall allows up to k_MaxWidth, like a cinema screen.
+    // A fist grabs the window, as in Android XR's grab: look at the window and close the hand (palm
+    // outward is best: the camera sees the back of the hand, and the settings gear, which needs the
+    // palm toward you, can't come up). The window, outlined, follows the hand round you at its
+    // distance, the hand's movement scaled up (k_GrabReach); open the hand to drop it, on a wall if
+    // it's dropped on one. A fist closing can pass through a pinch (the thumb folds over the index
+    // finger), so a tap on the window waits k_TapDelay and is cancelled if a fist forms meanwhile.
+    // The window and its panel are anchored to the room with an ARCore anchor, made again each time
+    // they're placed (Move, a resize, Arrange, Center): unanchored, they moved against the room
+    // whenever ARCore corrected its tracking, which looked like the window jumping about. The panel below
     // goes back, goes to the app's start, scrolls, brings the window back in front, and leaves. It
     // centers itself on the first frame, since the head's first pose can be off until the tracker
     // settles. Needs Shizuku running on the phone.
@@ -63,7 +76,19 @@ namespace CardboardXR.Demos.Apps
         {
             None,
             Resize,
+            Grab,
         }
+
+        // A finger is curled when its tip is nearer the palm's middle than this many palm lengths
+        // (wrist to the middle finger's knuckle), and straight beyond k_StraightRatio.
+        const float k_CurledRatio = 0.8f;
+        const float k_StraightRatio = 1.3f;
+        // How long a fist (or an open hand, to drop) must hold, in seconds, to count.
+        const float k_HandShapeSeconds = 0.08f;
+        // A tap waits this long, in seconds, in case a fist is forming.
+        const float k_TapDelay = 0.15f;
+        // The hand's movement while grabbing is scaled up this much on the window.
+        const float k_GrabReach = 3f;
 
         CoreServices m_Core;
         readonly AppWindowBridge m_Bridge = new();
@@ -84,6 +109,20 @@ namespace CardboardXR.Demos.Apps
         float m_NextLog;
         float m_Width = k_WindowWidth;
         bool m_Moving;
+        // The fist grab: how long the hand has looked like a fist (or open), where the hand and the
+        // window were when it closed, and a tap waiting in case a fist is forming.
+        float m_FistFor;
+        float m_OpenFor;
+        Vector3 m_GrabHand;
+        Vector3 m_GrabWindow;
+        Vector3 m_GrabPanel;
+        Vector2Int? m_PendingTap;
+        float m_PendingTapAt;
+        // The anchor holding the window and the panel to the room, and where they sit relative to it.
+        ARAnchor m_Anchor;
+        Pose m_WindowOnAnchor;
+        Pose m_PanelOnAnchor;
+        int m_AnchorRequest;
         int m_SavedFrameRate;
         FloatingWindows.Window m_WindowEntry;
         FloatingWindows.Window m_PanelEntry;
@@ -108,12 +147,17 @@ namespace CardboardXR.Demos.Apps
             m_WindowEntry = FloatingWindows.Register("App Window", () => m_Width, pose =>
             {
                 if (m_Moving)
-                    FinishMove();
+                    ShowWindow(true);
+                m_Moving = false;
                 m_Window.SetPositionAndRotation(pose.position, pose.rotation);
                 PlaceCorners();
+                Reanchor();
             }, false, k_WindowDistance);
-            m_PanelEntry = FloatingWindows.Register("Window Panel", m_Panel, M3Theme.DpToMeters(k_PanelSize.x, k_PanelDistance), true,
-                k_PanelDistance);
+            m_PanelEntry = FloatingWindows.Register("Window Panel", () => M3Theme.DpToMeters(k_PanelSize.x, k_PanelDistance), pose =>
+            {
+                m_Panel.SetPositionAndRotation(pose.position, pose.rotation);
+                Reanchor();
+            }, true, k_PanelDistance);
             PinchRouter.Handler = this;
             m_SavedFrameRate = Application.targetFrameRate;
             Application.targetFrameRate = k_FrameRate;
@@ -124,6 +168,8 @@ namespace CardboardXR.Demos.Apps
         public override void OnDemoExit(CoreServices core)
         {
             m_Bridge.Stop();
+            core.Placer.RemoveAnchor(m_Anchor);
+            m_Anchor = null;
             Application.targetFrameRate = m_SavedFrameRate;
             FloatingWindows.Unregister(m_WindowEntry);
             FloatingWindows.Unregister(m_PanelEntry);
@@ -154,9 +200,9 @@ namespace CardboardXR.Demos.Apps
             }
             if (Time.unscaledTime >= m_NextLog)
                 LogFrames();
-            if (m_Moving)
-                PlaceWhereLooking();
             FollowPinch();
+            FollowFist();
+            SendPendingTap();
             ShowEdge();
         }
 
@@ -318,6 +364,44 @@ namespace CardboardXR.Demos.Apps
             m_Window.SetPositionAndRotation(head.position + yaw * Vector3.forward * k_WindowDistance, yaw);
             WorldUi.PlaceInFront(m_Panel, head, k_PanelDistance, k_PanelPitch);
             PlaceCorners();
+            Reanchor();
+        }
+
+        // Anchors the window and the panel where they are now, replacing any anchor they had. Until
+        // ARCore adds it they stay as placed; without ARCore (3DoF) they just aren't anchored.
+        void Reanchor()
+        {
+            m_Core.Placer.RemoveAnchor(m_Anchor);
+            m_Anchor = null;
+            var request = ++m_AnchorRequest;
+            var pose = new Pose(m_Window.position, m_Window.rotation);
+            m_Core.Placer.AddAnchor(pose, anchor =>
+            {
+                if (this == null || request != m_AnchorRequest)
+                {
+                    if (m_Core != null)
+                        m_Core.Placer.RemoveAnchor(anchor);
+                    return;
+                }
+                m_Anchor = anchor;
+                if (anchor == null)
+                    return;
+                var inverse = Quaternion.Inverse(anchor.transform.rotation);
+                m_WindowOnAnchor = new Pose(inverse * (m_Window.position - anchor.transform.position), inverse * m_Window.rotation);
+                m_PanelOnAnchor = new Pose(inverse * (m_Panel.position - anchor.transform.position), inverse * m_Panel.rotation);
+            });
+        }
+
+        // The window and the panel follow their anchor as ARCore refines it, except while the window is
+        // being resized (it's re-anchored after).
+        void LateUpdate()
+        {
+            if (m_Anchor == null || m_Gesture != Gesture.None || m_Moving)
+                return;
+            var anchor = m_Anchor.transform;
+            m_Window.SetPositionAndRotation(anchor.position + anchor.rotation * m_WindowOnAnchor.position, anchor.rotation * m_WindowOnAnchor.rotation);
+            m_Panel.SetPositionAndRotation(anchor.position + anchor.rotation * m_PanelOnAnchor.position, anchor.rotation * m_PanelOnAnchor.rotation);
+            PlaceCorners();
         }
 
         // Where the gaze looks, upright and facing the head: where Move puts the window.
@@ -331,22 +415,66 @@ namespace CardboardXR.Demos.Apps
             PlaceCorners();
         }
 
-        // Move, as in Android XR: the window stays in view and follows the gaze until a pinch puts it
-        // down. (It used to hide until the next pinch, so a Move pressed by mistake turned the next
-        // tap into moving the window, with nothing to show it.)
+        // Move: the window hides, and the next pinch puts it where the gaze is, or on the wall there.
         void StartMove()
         {
             m_Moving = true;
-            m_Status.text = "Look where you want the window, then pinch to put it there.";
-            Debug.Log("[Apps] Moving the window: it follows the gaze until a pinch");
+            ShowWindow(false);
+            m_Status.text = "Look where you want the window (or at a wall) and pinch.";
+            Debug.Log("[Apps] Moving the window: the next pinch puts it where the gaze is");
         }
 
         void FinishMove()
         {
             m_Moving = false;
-            PlaceWhereLooking();
+            if (!PlaceOnWall())
+            {
+                PlaceWhereLooking();
+                Debug.Log("[Apps] Window moved");
+            }
+            ShowWindow(true);
             m_Status.text = Describe(m_State);
-            Debug.Log("[Apps] Window moved");
+            Reanchor();
+        }
+
+        void ShowWindow(bool show)
+        {
+            m_Window.gameObject.SetActive(show);
+            foreach (var handle in m_Handles)
+                handle.gameObject.SetActive(show);
+            m_MoveCorner.gameObject.SetActive(show);
+            m_CloseCorner.gameObject.SetActive(show);
+        }
+
+        // If the gaze is on a detected wall, puts the window flat on it, a little off it, as wide as the
+        // wall allows (16:9, up to k_MaxWidth), centered where the gaze meets it: a cinema screen.
+        bool PlaceOnWall() => PlaceOnWall(new Ray(m_Core.Head.position, m_Core.Head.forward));
+
+        // The same along any ray from the head: through the window's middle, for a grab dropped there.
+        bool PlaceOnWall(Ray ray)
+        {
+            var head = m_Core.Head;
+            var hits = Physics.RaycastAll(ray, 10f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+            System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+            foreach (var hit in hits)
+            {
+                var plane = hit.collider.GetComponentInParent<ARPlane>();
+                if (plane == null)
+                    continue;
+                if (plane.alignment != PlaneAlignment.Vertical)
+                    return false;
+                var normal = Vector3.ProjectOnPlane(plane.normal, Vector3.up).normalized;
+                if (Vector3.Dot(normal, head.position - hit.point) < 0f)
+                    normal = -normal;
+                var fit = Mathf.Min(plane.size.x, plane.size.y * k_Width / k_Height) * 0.92f;
+                m_Width = Mathf.Clamp(fit, k_MinWidth, k_MaxWidth);
+                ApplySize();
+                m_Window.SetPositionAndRotation(hit.point + normal * 0.03f, Quaternion.LookRotation(-normal, Vector3.up));
+                PlaceCorners();
+                Debug.Log($"[Apps] Window on a wall {hit.distance:F1} m away, {m_Width:F2} m wide (wall {plane.size.x:F1} x {plane.size.y:F1} m)");
+                return true;
+            }
+            return false;
         }
 
         void CloseApp()
@@ -396,9 +524,10 @@ namespace CardboardXR.Demos.Apps
         {
             var edge = m_Gesture == Gesture.Resize ? m_ResizeSide
                 : m_Gesture == Gesture.None && GazeOnWindow(out var local) ? EdgeAt(local) : Vector2.zero;
-            // The frame round the window stays off: only the handles show a resize is coming.
-            if (m_Edge.gameObject.activeSelf)
-                m_Edge.gameObject.SetActive(false);
+            // The frame round the window shows only while it's grabbed: the handles show a resize.
+            var grabbed = m_Gesture == Gesture.Grab;
+            if (m_Edge.gameObject.activeSelf != grabbed)
+                m_Edge.gameObject.SetActive(grabbed);
             // The handles light up on their corner.
             var corner = edge.y < 0f && edge.x != 0f;
             m_HandleMaterial.color = corner ? new Color(0.55f, 0.8f, 1f) : new Color(0.75f, 0.78f, 0.82f);
@@ -413,6 +542,9 @@ namespace CardboardXR.Demos.Apps
                 FinishMove();
                 return true;
             }
+            // A fist holding the window can read as a pinch too: it's still the grab.
+            if (m_Gesture == Gesture.Grab)
+                return true;
             // Only a resize handle: everything on the window is the ordinary gaze click, a tap.
             if (source != PinchSource.Hand || !GazeOnWindow(out var local))
                 return false;
@@ -434,9 +566,15 @@ namespace CardboardXR.Demos.Apps
 
         public void EndPinch()
         {
-            if (m_Gesture == Gesture.Resize)
-                Debug.Log($"[Apps] Window resized to {m_Width:F2} m wide");
+            if (m_Gesture == Gesture.Grab)
+                return;
+            var resized = m_Gesture == Gesture.Resize;
             m_Gesture = Gesture.None;
+            if (resized)
+            {
+                Debug.Log($"[Apps] Window resized to {m_Width:F2} m wide");
+                Reanchor();
+            }
         }
 
         // The hand's movement since the pinch began, on the window's plane, in the window's meters.
@@ -484,9 +622,130 @@ namespace CardboardXR.Demos.Apps
         {
             if (!GazeOnWindow(out var local))
                 return;
-            var pixel = PixelAt(local, k_Width, k_Height);
+            // Held a moment: a fist forming can look like a pinch on the way (see FollowFist).
+            m_PendingTap = PixelAt(local, k_Width, k_Height);
+            m_PendingTapAt = Time.unscaledTime;
+        }
+
+        void SendPendingTap()
+        {
+            if (!m_PendingTap.HasValue || Time.unscaledTime - m_PendingTapAt < k_TapDelay)
+                return;
+            var pixel = m_PendingTap.Value;
+            m_PendingTap = null;
             Debug.Log($"[Apps] Tap at {pixel.x}, {pixel.y}");
             m_Bridge.Tap(pixel.x, pixel.y);
+        }
+
+        // How curled each finger is: tip to the palm's middle, in palm lengths, for the index, middle,
+        // ring and little fingers. False if the hand isn't tracked.
+        bool FingerRatios(float[] ratios)
+        {
+            var tracker = m_Core.HandTracker;
+            if (tracker == null || !tracker.isActiveAndEnabled || !tracker.IsTracking)
+                return false;
+            var j = tracker.Joints;
+            var palm = (j[0] + j[5] + j[9] + j[13] + j[17]) / 5f;
+            var length = Vector3.Distance(j[0], j[9]);
+            if (length < 1e-3f)
+                return false;
+            ratios[0] = Vector3.Distance(j[8], palm) / length;
+            ratios[1] = Vector3.Distance(j[12], palm) / length;
+            ratios[2] = Vector3.Distance(j[16], palm) / length;
+            ratios[3] = Vector3.Distance(j[20], palm) / length;
+            return true;
+        }
+
+        readonly float[] m_Ratios = new float[4];
+
+        // The fist grab: a fist with the gaze on the window grabs it, the window follows the hand, and
+        // an open hand drops it.
+        void FollowFist()
+        {
+            if (m_Moving || m_Gesture == Gesture.Resize)
+                return;
+            var tracked = FingerRatios(m_Ratios);
+            var curled = 0;
+            var straight = 0;
+            if (tracked)
+            {
+                foreach (var ratio in m_Ratios)
+                {
+                    if (ratio < k_CurledRatio)
+                        curled++;
+                    if (ratio > k_StraightRatio)
+                        straight++;
+                }
+            }
+            if (tracked)
+                m_LostSince = -1f;
+            var fist = tracked && curled == 4;
+            var open = tracked && straight >= 3;
+            var dt = Time.unscaledDeltaTime;
+            m_FistFor = fist ? m_FistFor + dt : 0f;
+            m_OpenFor = open ? m_OpenFor + dt : 0f;
+            var hand = tracked ? (m_Core.HandTracker.Joints[0] + m_Core.HandTracker.Joints[9]) / 2f : Vector3.zero;
+
+            if (m_Gesture != Gesture.Grab)
+            {
+                if (m_FistFor < k_HandShapeSeconds || !GazeOnWindow(out _))
+                    return;
+                if (m_PendingTap.HasValue)
+                {
+                    Debug.Log("[Apps] A fist formed: the tap just before it wasn't one");
+                    m_PendingTap = null;
+                }
+                m_Gesture = Gesture.Grab;
+                m_GrabHand = hand;
+                m_GrabWindow = m_Window.position;
+                m_GrabPanel = m_Panel.position;
+                Debug.Log($"[Apps] Grabbed the window with a fist (pinch ratio {m_Core.HandTracker.PinchRatio:F2}, fingers " +
+                          $"{m_Ratios[0]:F2} {m_Ratios[1]:F2} {m_Ratios[2]:F2} {m_Ratios[3]:F2} palm lengths)");
+                return;
+            }
+
+            if (open && m_OpenFor >= k_HandShapeSeconds || !tracked && m_FistFor == 0f && m_OpenFor == 0f && LostTooLong())
+            {
+                DropGrab();
+                return;
+            }
+            if (!fist && !tracked)
+                return;
+            // The window follows the hand's movement, scaled up, kept at its distance from the head
+            // and turned to face it, upright.
+            var head = m_Core.Head.position;
+            var moved = (hand - m_GrabHand) * k_GrabReach;
+            var target = m_GrabWindow + moved;
+            var distance = Vector3.Distance(head, m_GrabWindow);
+            var direction = (target - head).normalized;
+            var position = head + direction * distance;
+            var facing = Vector3.ProjectOnPlane(position - head, Vector3.up);
+            var rotation = facing.sqrMagnitude > 1e-4f ? Quaternion.LookRotation(facing.normalized) : m_Window.rotation;
+            m_Window.SetPositionAndRotation(position, rotation);
+            m_Panel.position = m_GrabPanel + (position - m_GrabWindow);
+            m_Panel.rotation = Quaternion.LookRotation(m_Panel.position - head, Vector3.up);
+            PlaceCorners();
+        }
+
+        float m_LostSince = -1f;
+
+        // True once the hand has been out of view for a moment while grabbing: the window stays there.
+        bool LostTooLong()
+        {
+            if (m_LostSince < 0f)
+                m_LostSince = Time.unscaledTime;
+            return Time.unscaledTime - m_LostSince > 0.5f;
+        }
+
+        void DropGrab()
+        {
+            m_Gesture = Gesture.None;
+            m_LostSince = -1f;
+            var head = m_Core.Head.position;
+            var toWindow = m_Window.position - head;
+            if (!PlaceOnWall(new Ray(head, toWindow.normalized)))
+                Debug.Log("[Apps] Dropped the window");
+            Reanchor();
         }
 
         // The pixel, from the top left, at a point in a unit quad's local space, which runs -0.5 to 0.5.
