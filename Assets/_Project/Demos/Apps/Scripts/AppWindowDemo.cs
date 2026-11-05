@@ -278,12 +278,11 @@ namespace CardboardXR.Demos.Apps
         void BuildWindow()
         {
             m_Texture = new Texture2D(k_Width, k_Height, TextureFormat.RGBA32, false);
-            // The picture's first row is its top; a texture's is its bottom.
+            // GlassesWebViewBridge copies ImageReader rows bottom-to-top, matching Unity's
+            // Texture2D raw-data row order. Do not flip the material again or web pages appear upside down.
             m_WindowMaterial = new Material(m_Material)
             {
                 mainTexture = m_Texture,
-                mainTextureScale = new Vector2(1f, -1f),
-                mainTextureOffset = new Vector2(0f, 1f),
             };
             var window = GameObject.CreatePrimitive(PrimitiveType.Quad);
             window.name = "App Window";
