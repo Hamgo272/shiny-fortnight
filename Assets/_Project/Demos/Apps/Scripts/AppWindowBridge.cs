@@ -1,164 +1,49 @@
-using Unity.Collections;
 using UnityEngine;
 
 namespace CardboardXR.Demos.Apps
 {
-    public enum AppWindowState
-    {
-        Failed = -3,
-        PermissionDenied = -2,
-        NoShizuku = -1,
-        Idle = 0,
-        WaitingForPermission = 1,
-        Starting = 2,
-        Running = 3,
-    }
-
-    // The C# side of the Android plugin AppWindows.java. It does nothing off Android, where there are
-    // no other apps to show. The two frame buffers are allocated here and written from Java, so a
-    // frame reaches Unity without a copy through JNI.
+    // Public-API bridge. Android opens apps and URLs normally; it does not mirror them into Unity.
     public sealed class AppWindowBridge
     {
 #if UNITY_ANDROID && !UNITY_EDITOR
         AndroidJavaClass m_Plugin;
+        AndroidJavaClass Plugin => m_Plugin ??= new AndroidJavaClass("com.brenpoly.cardboardxr.windows.AppWindows");
 #endif
-        NativeArray<byte> m_First;
-        NativeArray<byte> m_Second;
 
-        public AppWindowState State
+        public bool LaunchPackage(string packageName)
         {
-            get
-            {
 #if UNITY_ANDROID && !UNITY_EDITOR
-                return m_Plugin == null ? AppWindowState.Idle : (AppWindowState)m_Plugin.CallStatic<int>("state");
+            return Plugin.CallStatic<bool>("launchPackage", packageName);
 #else
-                return AppWindowState.NoShizuku;
+            Debug.Log($"[Apps] Android app launch requested: {packageName}");
+            return false;
 #endif
-            }
         }
 
-        // Goes up with each finished frame.
-        public long Sequence
+        public bool OpenUrl(string url)
         {
-            get
-            {
 #if UNITY_ANDROID && !UNITY_EDITOR
-                return m_Plugin == null ? 0 : m_Plugin.CallStatic<long>("sequence");
+            return Plugin.CallStatic<bool>("openUrl", url);
 #else
-                return 0;
-#endif
-            }
-        }
-
-        // The finished frame for a sequence number: valid until the next-but-one frame starts.
-        public NativeArray<byte> Frame(long sequence) => sequence % 2 == 0 ? m_First : m_Second;
-
-        public void Start(int width, int height, int dpi, string launchPackage)
-        {
-            var size = width * height * 4;
-            m_First = new NativeArray<byte>(size, Allocator.Persistent);
-            m_Second = new NativeArray<byte>(size, Allocator.Persistent);
-#if UNITY_ANDROID && !UNITY_EDITOR
-            m_Plugin = new AndroidJavaClass("com.brenpoly.cardboardxr.windows.AppWindows");
-            var first = AndroidJNI.NewDirectByteBuffer(m_First);
-            var second = AndroidJNI.NewDirectByteBuffer(m_Second);
-            var method = AndroidJNI.GetStaticMethodID(m_Plugin.GetRawClass(), "start",
-                "(Ljava/nio/ByteBuffer;Ljava/nio/ByteBuffer;IIILjava/lang/String;Ljava/lang/String;)V");
-            var appPackage = AndroidJNI.NewStringUTF(Application.identifier);
-            var launch = AndroidJNI.NewStringUTF(launchPackage);
-            AndroidJNI.CallStaticVoidMethod(m_Plugin.GetRawClass(), method, new[]
-            {
-                new jvalue { l = first }, new jvalue { l = second }, new jvalue { i = width }, new jvalue { i = height },
-                new jvalue { i = dpi }, new jvalue { l = appPackage }, new jvalue { l = launch },
-            });
-            AndroidJNI.DeleteLocalRef(first);
-            AndroidJNI.DeleteLocalRef(second);
-            AndroidJNI.DeleteLocalRef(appPackage);
-            AndroidJNI.DeleteLocalRef(launch);
+            Debug.Log($"[Apps] URL requested: {url}");
+            return false;
 #endif
         }
 
-        public void Stop()
+        public bool OpenMaps()
         {
 #if UNITY_ANDROID && !UNITY_EDITOR
-            m_Plugin?.CallStatic("stop");
+            return Plugin.CallStatic<bool>("openMaps");
+#else
+            return OpenUrl("https://www.google.com/maps");
+#endif
+        }
+
+        public void Dispose()
+        {
+#if UNITY_ANDROID && !UNITY_EDITOR
             m_Plugin?.Dispose();
             m_Plugin = null;
-#endif
-            if (m_First.IsCreated)
-                m_First.Dispose();
-            if (m_Second.IsCreated)
-                m_Second.Dispose();
-        }
-
-        public void Launch(string packageName)
-        {
-#if UNITY_ANDROID && !UNITY_EDITOR
-            m_Plugin?.CallStatic("launch", packageName);
-#endif
-        }
-
-        public void Tap(int x, int y)
-        {
-#if UNITY_ANDROID && !UNITY_EDITOR
-            m_Plugin?.CallStatic("tap", x, y);
-#endif
-        }
-
-        public void Swipe(int fromX, int fromY, int toX, int toY, int milliseconds)
-        {
-#if UNITY_ANDROID && !UNITY_EDITOR
-            m_Plugin?.CallStatic("swipe", fromX, fromY, toX, toY, milliseconds);
-#endif
-        }
-
-        // A mouse wheel's scroll at a pixel, notches up (+) or down (-); a swipe of swipeDistance
-        // pixels where the phone's input command can't scroll.
-        public void Scroll(int x, int y, int notches, int swipeDistance)
-        {
-#if UNITY_ANDROID && !UNITY_EDITOR
-            m_Plugin?.CallStatic("scroll", x, y, notches, swipeDistance);
-#endif
-        }
-
-        // Unity lost the phone's focus to the window's app: takes it back, without restarting Unity's
-        // activity (which would pause ARCore).
-        public void Focus()
-        {
-#if UNITY_ANDROID && !UNITY_EDITOR
-            m_Plugin?.CallStatic("focus");
-#endif
-        }
-
-        public void Paused(bool paused)
-        {
-#if UNITY_ANDROID && !UNITY_EDITOR
-            m_Plugin?.CallStatic("paused", paused);
-#endif
-        }
-
-        // Types text into whatever has focus on the window, such as a page's search box.
-        public void Text(string text)
-        {
-#if UNITY_ANDROID && !UNITY_EDITOR
-            if (!string.IsNullOrEmpty(text))
-                m_Plugin?.CallStatic("text", text);
-#endif
-        }
-
-        // Opens a web address in the window's app (the browser).
-        public void OpenUrl(string url)
-        {
-#if UNITY_ANDROID && !UNITY_EDITOR
-            m_Plugin?.CallStatic("openUrl", url);
-#endif
-        }
-
-        // An Android key code, such as KEYCODE_BACK.
-        public void Key(int keyCode)
-        {
-#if UNITY_ANDROID && !UNITY_EDITOR
-            m_Plugin?.CallStatic("key", keyCode);
 #endif
         }
     }
