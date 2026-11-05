@@ -1,3 +1,4 @@
+using CardboardXR.Demos;
 using CardboardXR.UI;
 using UnityEngine;
 
@@ -7,6 +8,7 @@ namespace CardboardXR.Demos.Apps
     // This demo therefore provides launch shortcuts; selected apps open as normal Android activities.
     public class AppWindowDemo : Demo
     {
+        public const string BrowserId = "browser";
         const string k_Chrome = "com.android.chrome";
         const string k_SamsungInternet = "com.sec.android.app.sbrowser";
         const string k_YouTube = "com.google.android.youtube";
