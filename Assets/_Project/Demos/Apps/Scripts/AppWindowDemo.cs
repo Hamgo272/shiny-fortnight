@@ -86,6 +86,8 @@ namespace CardboardXR.Demos.Apps
         enum Gesture
         {
             None,
+            PendingTap,
+            Scroll,
             Resize,
             Grab,
         }
@@ -164,8 +166,16 @@ namespace CardboardXR.Demos.Apps
         // The pinch held on the window, if any.
         Gesture m_Gesture;
         Vector3 m_PinchStart;
+        Vector3 m_SmoothedScrollHand;
+        Vector3 m_LastScrollHand;
+        Vector3 m_PinchLocal;
+        Vector2Int m_PinchPixel;
         Vector2 m_ResizeSide;
         float m_ResizeFrom;
+        const float k_ScrollStartDistance = 0.025f;
+        const float k_ScrollDeadZone = 0.0008f;
+        const float k_ScrollSmoothingSeconds = 0.035f;
+        const float k_ScrollPixelsPerMeter = 3200f;
 
         public override void OnDemoEnter(CoreServices core)
         {
@@ -705,7 +715,8 @@ namespace CardboardXR.Demos.Apps
             // The frame round the window lights while something is happening to the window as a whole
             // (scrolling, moving, resizing), dimly while the scroll pose is about to start, and is
             // otherwise off: lit by the gaze alone it looked like a resize was coming.
-            var active = m_TwoFingers.IsScrolling || m_Moving || m_Gesture == Gesture.Resize || m_Gesture == Gesture.Grab;
+            var active = m_TwoFingers.IsScrolling || m_Moving || m_Gesture == Gesture.Scroll ||
+                         m_Gesture == Gesture.Resize || m_Gesture == Gesture.Grab;
             var ready = !active && m_TwoFingers.IsArming;
             if (m_Edge.gameObject.activeSelf != (active || ready))
                 m_Edge.gameObject.SetActive(active || ready);
@@ -728,18 +739,22 @@ namespace CardboardXR.Demos.Apps
             // A fist holding the window reads as a pinch too: it's still the grab.
             if (m_Gesture == Gesture.Grab)
                 return true;
-            // Only a resize handle: everything on the window is the ordinary gaze click, a tap.
-            if (source != PinchSource.Hand || !GazeOnWindow(out var local))
-                return false;
-            if (gazeTarget != null)
-                return false;
-            var edge = EdgeAt(local);
-            if (edge == Vector2.zero)
+            if (source != PinchSource.Hand || !GazeOnWindow(out var local) || gazeTarget != null)
                 return false;
             var tracker = m_Core.HandTracker;
             if (tracker == null || !tracker.IsTracking)
                 return false;
             m_PinchStart = tracker.PinchPoint;
+            m_PinchLocal = local;
+            m_PinchPixel = PixelAt(local, k_Width, k_Height);
+            var edge = EdgeAt(local);
+            if (edge == Vector2.zero)
+            {
+                // A pinch on the picture is a tap unless it moves vertically far enough to
+                // become the same smoothed pinch-drag scroll used by android-port.
+                m_Gesture = Gesture.PendingTap;
+                return true;
+            }
             m_Gesture = Gesture.Resize;
             m_ResizeSide = edge;
             m_ResizeFrom = m_Width;
@@ -751,6 +766,11 @@ namespace CardboardXR.Demos.Apps
         {
             if (m_Gesture == Gesture.Grab)
                 return;
+            if (m_Gesture == Gesture.PendingTap)
+            {
+                StartRipple(m_PinchLocal);
+                m_Bridge.Tap(m_PinchPixel.x, m_PinchPixel.y);
+            }
             if (m_Gesture == Gesture.Resize)
                 Debug.Log($"[Apps] Window resized to {m_Width:F2} m wide");
             m_Gesture = Gesture.None;
@@ -777,6 +797,22 @@ namespace CardboardXR.Demos.Apps
             var moved = HandMoved();
             switch (m_Gesture)
             {
+                case Gesture.PendingTap:
+                    var travel = Vector3.Dot(tracker.PinchPoint - m_PinchStart, m_Window.up);
+                    if (Mathf.Abs(travel) < k_ScrollStartDistance)
+                        break;
+                    m_Gesture = Gesture.Scroll;
+                    m_SmoothedScrollHand = m_LastScrollHand = tracker.PinchPoint;
+                    SendPinchScroll(travel * k_ScrollPixelsPerMeter);
+                    break;
+                case Gesture.Scroll:
+                    var smoothing = 1f - Mathf.Exp(-Time.unscaledDeltaTime / k_ScrollSmoothingSeconds);
+                    m_SmoothedScrollHand = Vector3.Lerp(m_SmoothedScrollHand, tracker.PinchPoint, smoothing);
+                    var scrollDelta = Vector3.Dot(m_SmoothedScrollHand - m_LastScrollHand, m_Window.up);
+                    m_LastScrollHand = m_SmoothedScrollHand;
+                    if (Mathf.Abs(scrollDelta) >= k_ScrollDeadZone)
+                        SendPinchScroll(scrollDelta * k_ScrollPixelsPerMeter);
+                    break;
                 case Gesture.Resize:
                     // The edge follows the hand outward or inward, the opposite edge staying put.
                     // A side edge grows by the hand's movement across, a top or bottom edge by its
@@ -794,6 +830,13 @@ namespace CardboardXR.Demos.Apps
                     ApplySize();
                     break;
             }
+        }
+
+        void SendPinchScroll(float pixels)
+        {
+            if (Mathf.Abs(pixels) < 1f)
+                return;
+            m_Bridge.Scroll(m_PinchPixel.x, m_PinchPixel.y, 0, Mathf.RoundToInt(pixels));
         }
 
         // A pinch or a screen tap with the gaze on the window: a tap in the app where the gaze is.
