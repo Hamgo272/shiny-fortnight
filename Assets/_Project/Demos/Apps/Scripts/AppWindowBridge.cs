@@ -138,7 +138,7 @@ namespace CardboardXR.Demos.Apps
         {
 #if UNITY_ANDROID && !UNITY_EDITOR
             if (m_State == AppWindowState.Running)
-                Plugin.CallStatic("scroll", (float)x, (float)y, (float)-swipeDistance);
+                Plugin.CallStatic("scroll", (float)x, (float)y, (float)swipeDistance);
 #endif
         }
 
