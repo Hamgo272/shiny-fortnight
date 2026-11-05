@@ -267,10 +267,10 @@ namespace CardboardXR.Demos.Apps
 
         static string Describe(AppWindowState state) => state switch
         {
-            AppWindowState.NoShizuku => "Open Shizuku and start it, then come back here.",
-            AppWindowState.WaitingForPermission => "Allow CardboardXR in the Shizuku prompt on the phone.",
-            AppWindowState.PermissionDenied => "Shizuku permission was denied. Allow CardboardXR in the Shizuku app.",
-            AppWindowState.Failed => "Couldn't open the window. Restart Shizuku and try again.",
+            AppWindowState.NoShizuku => "Embedded browser is unavailable on this device.",
+            AppWindowState.WaitingForPermission => "Starting the embedded browser...",
+            AppWindowState.PermissionDenied => "Android denied access to the embedded browser.",
+            AppWindowState.Failed => "Couldn't start the embedded browser. Check the Android WebView installation.",
             AppWindowState.Starting => "Opening the window...",
             _ => "",
         };
