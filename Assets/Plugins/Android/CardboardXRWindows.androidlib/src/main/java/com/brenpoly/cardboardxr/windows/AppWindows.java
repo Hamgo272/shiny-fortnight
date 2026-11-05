@@ -5,16 +5,26 @@ import android.content.Intent;
 import android.net.Uri;
 import android.util.Log;
 
-import com.unity3d.player.UnityPlayer;
-
 public final class AppWindows {
     private static final String TAG = "CardboardXRApps";
 
     private AppWindows() {}
 
+    // Unity's player classes are supplied by Unity during the final Android build, not by this
+    // Android library's standalone Gradle compile. Resolve the Activity without a compile-time link.
+    private static Activity activity() {
+        try {
+            Object current = Class.forName("com.unity3d.player.UnityPlayer").getField("currentActivity").get(null);
+            return current instanceof Activity ? (Activity) current : null;
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            Log.e(TAG, "Couldn't get Unity's Activity", e);
+            return null;
+        }
+    }
+
     // Android's public app-launch API: the target app opens normally, outside Unity.
     public static boolean launchPackage(String packageName) {
-        Activity activity = UnityPlayer.currentActivity;
+        Activity activity = activity();
         if (activity == null || packageName == null || packageName.isEmpty()) return false;
         try {
             Intent intent = activity.getPackageManager().getLaunchIntentForPackage(packageName);
@@ -33,7 +43,7 @@ public final class AppWindows {
 
     // Android resolves the URL to the user's installed browser using the normal chooser/default.
     public static boolean openUrl(String url) {
-        Activity activity = UnityPlayer.currentActivity;
+        Activity activity = activity();
         if (activity == null || url == null || url.isEmpty()) return false;
         try {
             Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
